@@ -5,7 +5,7 @@ fn main() {
         let (gl, shader_version, window, event_loop) = {
             let event_loop = glutin::event_loop::EventLoop::new();
             let window_builder = glutin::window::WindowBuilder::new()
-                .with_title("Hello triangle!")
+                .with_title("Calibrator")
                 .with_inner_size(glutin::dpi::LogicalSize::new(1024.0, 768.0));
             let window = glutin::ContextBuilder::new()
                 .with_vsync(true)
@@ -99,6 +99,7 @@ fn main() {
                 Event::WindowEvent { ref event, .. } => match event {
                     WindowEvent::Resized(physical_size) => {
                         window.resize(*physical_size);
+                        gl.viewport(0, 0, physical_size.width as _, physical_size.height as _);
                     }
                     WindowEvent::CloseRequested => {
                         gl.delete_program(program);
