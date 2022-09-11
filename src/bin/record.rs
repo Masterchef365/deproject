@@ -2,6 +2,7 @@ use std::collections::HashSet;
 use std::fs::File;
 use std::io::BufWriter;
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::{path::Path, time::Duration};
 
 use glow::*;
@@ -22,9 +23,9 @@ use anyhow::{ensure, Ok, Result};
 use deproject::project::align_images;
 
 use clap::Parser;
-use deproject::RecordArgs;
+use deproject::{RecordArgs, record_samples, PatternSample};
 
-fn gmain() -> Result<()> {
+fn main() -> Result<()> {
     let args = RecordArgs::parse();
 
     let images_root = PathBuf::from("images");
@@ -32,12 +33,18 @@ fn gmain() -> Result<()> {
         std::fs::create_dir(&images_root)?;
     }
 
-    let images_path = images_root.join(args.name);
+    let images_path = images_root.join(&args.name);
+
+    for pat in record_samples(&args) {
+        let f = pat.to_string();
+        let p2: PatternSample = PatternSample::from_str(&f).unwrap();
+        dbg!(pat, p2);
+    }
 
     Ok(())
 }
 
-fn main() -> Result<()> {
+fn gmain() -> Result<()> {
     // Check for depth or color-compatible devices.
     let queried_devices = HashSet::new(); // Query any devices
     let context = Context::new()?;
