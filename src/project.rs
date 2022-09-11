@@ -203,15 +203,17 @@ pub fn align_images(
 ) {
     // Iterate over the pixels of the depth image
     for depth_y in 0..depth_intrin.height() {
-        let mut depth_pixel_index = depth_y * depth_intrin.width();
+        //let mut depth_pixel_index = depth_y * depth_intrin.width();
         for depth_x in 0..depth_intrin.width() {
-            depth_pixel_index += 1;
+
+            let depth_pixel_index = depth_y * depth_intrin.width() + depth_x;
 
             // Skip over depth pixels with the value of zero, we have no depth data so we will not write anything into our aligned images
             let depth = depth[depth_pixel_index];
             if depth == 0 {
                 continue;
             }
+
             // Map the top-left corner of the depth pixel onto the other image
             let depth_pixel = [depth_x as f32 - 0.5, depth_y as f32 - 0.5];
             let depth_point =
@@ -246,6 +248,8 @@ pub fn align_images(
                     output_img[depth_pixel_index] = input_img[y * other_intrin.width() + x];
                 }
             }
+
+            //depth_pixel_index += 1;
         }
     }
 }

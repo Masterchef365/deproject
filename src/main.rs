@@ -75,7 +75,7 @@ fn main() -> Result<()> {
 
         in_depth_buf.extend(depth_frame.iter().map(|p| match p {
             PixelKind::Z16 { depth } => depth,
-            _ => panic!(),
+            _ => panic!("{:?}", p),
         }));
 
         in_color_buf.extend(color_frame.iter().map(|p| match p {
@@ -84,10 +84,6 @@ fn main() -> Result<()> {
         }));
 
         out_color_buf.resize(in_depth_buf.len(), [0; 3]);
-
-        //in_color_buf.resize(color_frame.width() * color_frame.height(), [0; 3]);
-        //in_depth_buf.resize(depth_frame.width() * depth_frame.height(), 0);
-        //out_color_buf.resize(depth_frame.width() * depth_frame.height(), [0; 3]);
 
         align_images(
             &depth_intrinsics,
@@ -98,12 +94,28 @@ fn main() -> Result<()> {
             &mut out_color_buf,
         );
 
-        let path = format!("images/{}.png", i);
+        let path = format!("images/color_to_depth_{}.png", i);
         write_color_png(
             Path::new(&path),
             depth_frame.width() as _,
             depth_frame.height() as _,
             bytemuck::cast_slice(&out_color_buf),
+        )?;
+
+        let path = format!("images/color_{}.png", i);
+        write_color_png(
+            Path::new(&path),
+            color_frame.width() as _,
+            color_frame.height() as _,
+            bytemuck::cast_slice(&in_color_buf),
+        )?;
+
+        let path = format!("images/depth_{}.png", i);
+        write_depth_png(
+            Path::new(&path),
+            depth_frame.width() as u32 * 2,
+            depth_frame.height() as _,
+            &in_depth_buf,
         )?;
 
         dbg!(i);
@@ -112,11 +124,21 @@ fn main() -> Result<()> {
     }
 }
 
-//fn convert_color_frame()
+fn write_depth_png(path: &Path, width: u32, height: u32, data: &[u16]) -> Result<()> {
+    let file = File::create(path)?;
+    let ref mut w = BufWriter::new(file);
 
-fn write_depth_png(path: &Path, width: u32, height: u32, data: &[u8]) -> Result<()> {
-    todo!();
+    let mut encoder = png::Encoder::new(w, width, height); // Width is 2 pixels and height is 1.
+    encoder.set_color(png::ColorType::Grayscale);
+    encoder.set_depth(png::BitDepth::Eight);
+
+    let mut writer = encoder.write_header()?;
+
+    writer.write_image_data(bytemuck::cast_slice(data))?;
+
+    Ok(())
 }
+
 
 fn write_color_png(path: &Path, width: u32, height: u32, data: &[u8]) -> Result<()> {
     let file = File::create(path)?;
