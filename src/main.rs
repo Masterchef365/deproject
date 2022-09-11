@@ -1,6 +1,97 @@
+use std::collections::HashSet;
+use std::{path::Path, time::Duration};
+use std::fs::File;
+use std::io::BufWriter;
+
 use glow::*;
 
-fn main() {
+use realsense_rust::kind::Rs2Option;
+use realsense_rust::{
+    config::Config,
+    context::Context,
+    frame::PixelKind,
+    frame::{ColorFrame, DepthFrame},
+    kind::{Rs2CameraInfo, Rs2Format, Rs2StreamKind},
+    pipeline::InactivePipeline,
+};
+
+mod project;
+
+use anyhow::{Result, ensure, Ok};
+
+fn main() -> Result<()> {
+    // Check for depth or color-compatible devices.
+    let queried_devices = HashSet::new(); // Query any devices
+    let context = Context::new()?;
+    let devices = context.query_devices(queried_devices);
+    ensure!(!devices.is_empty(), "No devices found");
+
+    let device = &devices[0];
+
+    // create pipeline
+    let pipeline = InactivePipeline::try_from(&context)?;
+    let mut config = Config::new();
+    config
+        .enable_device_from_serial(device.info(Rs2CameraInfo::SerialNumber).unwrap())?
+        .disable_all_streams()?
+        .enable_stream(Rs2StreamKind::Color, None, 640, 0, Rs2Format::Bgr8, 30)?
+        .enable_stream(Rs2StreamKind::Depth, None, 0, 240, Rs2Format::Z16, 30)
+        .unwrap();
+
+    // Change pipeline's type from InactivePipeline -> ActivePipeline
+    let mut pipeline = pipeline.start(Some(config))?;
+
+    let timeout = Duration::from_millis(2000);
+    loop {
+        let frames = pipeline.wait(Some(timeout)).unwrap();
+        let color_frames: Vec<ColorFrame> = frames.frames_of_type();
+        let depth_frames: Vec<DepthFrame> = frames.frames_of_type();
+
+        if !color_frames.is_empty() {
+            let color_frame = &color_frames[0];
+        }
+        if !depth_frames.is_empty() {
+            let depth_frame = &depth_frames[0];
+        }
+    }
+
+    Ok(())
+}
+
+//fn convert_color_frame()
+
+fn write_depth_png(path: &Path, width: u32, height: u32, data: &[u8]) -> Result<()> {
+    todo!();
+}
+
+fn write_color_png(path: &Path, width: u32, height: u32, data: &[u8]) -> Result<()> {
+    // For reading and opening files
+
+    let path = Path::new(r"/path/to/image.png");
+    let file = File::create(path).unwrap();
+    let ref mut w = BufWriter::new(file);
+
+    let mut encoder = png::Encoder::new(w, 2, 1); // Width is 2 pixels and height is 1.
+    encoder.set_color(png::ColorType::Rgba);
+    encoder.set_depth(png::BitDepth::Eight);
+    encoder.set_trns(vec!(0xFFu8, 0xFFu8, 0xFFu8, 0xFFu8));
+    encoder.set_source_gamma(png::ScaledFloat::from_scaled(45455)); // 1.0 / 2.2, scaled by 100000
+    encoder.set_source_gamma(png::ScaledFloat::new(1.0 / 2.2));     // 1.0 / 2.2, unscaled, but rounded
+    let source_chromaticities = png::SourceChromaticities::new(     // Using unscaled instantiation here
+        (0.31270, 0.32900),
+        (0.64000, 0.33000),
+        (0.30000, 0.60000),
+        (0.15000, 0.06000)
+    );
+    encoder.set_source_chromaticities(source_chromaticities);
+    let mut writer = encoder.write_header().unwrap();
+
+    let data = [255, 0, 0, 255, 0, 0, 0, 255]; // An array containing a RGBA sequence. First pixel is red and second pixel is black.
+    writer.write_image_data(&data).unwrap(); // Save
+    todo!()
+}
+
+fn pmain() {
     unsafe {
         let (gl, shader_version, window, event_loop) = {
             let event_loop = glutin::event_loop::EventLoop::new();
