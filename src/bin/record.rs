@@ -262,6 +262,13 @@ fn main() -> Result<()> {
         use glutin::event::{Event, WindowEvent};
         use glutin::event_loop::ControlFlow;
 
+        println!("Hit enter to continue");
+        std::io::stdin().lines().next().unwrap().unwrap();
+        for n in (1..=3).rev() {
+            println!("Starting in {}...", n);
+            std::thread::sleep(Duration::from_secs(1));
+        }
+
         event_loop.run(move |event, _, control_flow| {
             *control_flow = ControlFlow::Wait;
             match event {
@@ -277,8 +284,10 @@ fn main() -> Result<()> {
                         gl.uniform_3_f32(loc.as_ref(), x, y, z);
                         gl.clear(glow::COLOR_BUFFER_BIT);
                         gl.draw_arrays(glow::TRIANGLES, 0, 3);
+
                         window.swap_buffers().unwrap();
 
+                        std::thread::sleep(Duration::from_secs(1));
                         tx.send(set).unwrap();
                         lock_rx.recv().unwrap();
 

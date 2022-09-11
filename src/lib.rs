@@ -16,7 +16,7 @@ pub struct RecordArgs {
     pub max_steps: usize,
 
     /// Number of samples
-    #[clap(short, long, value_parser, default_value_t = 50)]
+    #[clap(short, long, value_parser, default_value_t = 20)]
     pub samples: usize,
 }
 
