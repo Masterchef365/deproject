@@ -25,7 +25,7 @@ use deproject::project::align_images;
 use clap::Parser;
 use deproject::{RecordArgs, record_samples, PatternSample};
 
-fn main() -> Result<()> {
+fn gmain() -> Result<()> {
     let args = RecordArgs::parse();
 
     let images_root = PathBuf::from("images");
@@ -44,7 +44,7 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn gmain() -> Result<()> {
+fn main() -> Result<()> {
     // Check for depth or color-compatible devices.
     let queried_devices = HashSet::new(); // Query any devices
     let context = Context::new()?;
@@ -136,7 +136,7 @@ fn gmain() -> Result<()> {
         let path = format!("images/depth_{}.png", i);
         write_depth_png(
             Path::new(&path),
-            depth_frame.width() as u32 * 2,
+            depth_frame.width() as u32,
             depth_frame.height() as _,
             &in_depth_buf,
         )?;
@@ -153,7 +153,7 @@ fn write_depth_png(path: &Path, width: u32, height: u32, data: &[u16]) -> Result
 
     let mut encoder = png::Encoder::new(w, width, height); // Width is 2 pixels and height is 1.
     encoder.set_color(png::ColorType::Grayscale);
-    encoder.set_depth(png::BitDepth::Eight);
+    encoder.set_depth(png::BitDepth::Sixteen);
 
     let mut writer = encoder.write_header()?;
 

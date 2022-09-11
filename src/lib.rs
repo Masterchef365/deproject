@@ -27,7 +27,7 @@ pub struct PatternSample {
     /// Orientation, horizontal if true
     pub orient: bool,
     /// On/Off selection
-    pub color: bool,
+    pub sign: bool,
     /// Index of this sample
     pub idx: usize,
 }
@@ -38,7 +38,7 @@ impl ToString for PatternSample {
             "{}_{}_{}_{}",
             self.step.to_string(),
             if self.orient { "h" } else { "v" },
-            if self.color { "t" } else { "f" },
+            if self.sign { "t" } else { "f" },
             &self.idx.to_string(),
         )
     }
@@ -68,7 +68,7 @@ impl FromStr for PatternSample {
         Ok(Self {
             step,
             orient,
-            color,
+            sign: color,
             idx,
         })
     }
@@ -83,7 +83,7 @@ pub fn record_samples(args: &RecordArgs) -> Vec<PatternSample> {
                     pat.push(PatternSample {
                         step,
                         orient,
-                        color,
+                        sign: color,
                         idx,
                     });
                 }
