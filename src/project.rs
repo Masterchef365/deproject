@@ -202,11 +202,15 @@ pub fn align_images(
     output_img: &mut [[u8; 3]],
 ) {
     // Iterate over the pixels of the depth image
+    let depth_width = depth_intrin.width();
+    let color_width = other_intrin.width();
+    let color_height = other_intrin.height();
+
     for depth_y in 0..depth_intrin.height() {
         //let mut depth_pixel_index = depth_y * depth_intrin.width();
         for depth_x in 0..depth_intrin.width() {
 
-            let depth_pixel_index = depth_y * depth_intrin.width() + depth_x;
+            let depth_pixel_index = depth_y * depth_width + depth_x;
 
             // Skip over depth pixels with the value of zero, we have no depth data so we will not write anything into our aligned images
             let depth = depth[depth_pixel_index];
@@ -234,8 +238,8 @@ pub fn align_images(
 
             if other_x0 < 0
                 || other_y0 < 0
-                || other_x1 >= other_intrin.width() as i32
-                || other_y1 >= other_intrin.height() as i32
+                || other_x1 >= color_width as i32
+                || other_y1 >= color_height as i32
             {
                 continue;
             }
@@ -245,11 +249,9 @@ pub fn align_images(
                 for x in other_x0..=other_x1 {
                     let x = x as usize;
                     let y = y as usize;
-                    output_img[depth_pixel_index] = input_img[y * other_intrin.width() + x];
+                    output_img[depth_pixel_index] = input_img[y * color_width + x];
                 }
             }
-
-            //depth_pixel_index += 1;
         }
     }
 }

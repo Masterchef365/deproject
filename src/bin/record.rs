@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use std::fs::File;
 use std::io::BufWriter;
+use std::path::PathBuf;
 use std::{path::Path, time::Duration};
 
 use glow::*;
@@ -15,11 +16,26 @@ use realsense_rust::{
     pipeline::InactivePipeline,
 };
 
-mod project;
 
 use anyhow::{ensure, Ok, Result};
 
-use crate::project::align_images;
+use deproject::project::align_images;
+
+use clap::Parser;
+use deproject::RecordArgs;
+
+fn gmain() -> Result<()> {
+    let args = RecordArgs::parse();
+
+    let images_root = PathBuf::from("images");
+    if !images_root.is_dir() {
+        std::fs::create_dir(&images_root)?;
+    }
+
+    let images_path = images_root.join(args.name);
+
+    Ok(())
+}
 
 fn main() -> Result<()> {
     // Check for depth or color-compatible devices.
@@ -36,8 +52,8 @@ fn main() -> Result<()> {
     config
         .enable_device_from_serial(device.info(Rs2CameraInfo::SerialNumber).unwrap())?
         .disable_all_streams()?
-        .enable_stream(Rs2StreamKind::Color, None, 640, 0, Rs2Format::Bgr8, 30)?
-        .enable_stream(Rs2StreamKind::Depth, None, 0, 240, Rs2Format::Z16, 30)
+        .enable_stream(Rs2StreamKind::Color, None, 1280, 0, Rs2Format::Bgr8, 30)?
+        .enable_stream(Rs2StreamKind::Depth, None, 1280, 0, Rs2Format::Z16, 30)
         .unwrap();
 
     // Change pipeline's type from InactivePipeline -> ActivePipeline
