@@ -2,7 +2,7 @@ use realsense_rust::{base::*, kind::Rs2DistortionModel};
 
 /// Ported from https://github.com/IntelRealSense/librealsense/blob/master/src/rs.cpp
 /// Git rev 4e7050a
-pub fn rs2_project_point_to_pixel(intrin: Rs2Intrinsics, point: [f32; 3]) -> [f32; 2] {
+pub fn rs2_project_point_to_pixel(intrin: &Rs2Intrinsics, point: [f32; 3]) -> [f32; 2] {
     let mut x = point[0] / point[2];
     let mut y = point[1] / point[2];
 
@@ -78,7 +78,7 @@ pub fn rs2_project_point_to_pixel(intrin: Rs2Intrinsics, point: [f32; 3]) -> [f3
 }
 
 pub fn rs2_deproject_pixel_to_point(
-    intrin: Rs2Intrinsics,
+    intrin: &Rs2Intrinsics,
     pixel: [f32; 2],
     depth: f32,
 ) -> [f32; 3] {
@@ -183,7 +183,7 @@ pub fn rs2_deproject_pixel_to_point(
     [depth * x, depth * y, depth]
 }
 
-pub fn rs2_transform_point_to_point(extrin: Rs2Extrinsics, from_point: [f32; 3]) -> [f32; 3] {
+pub fn rs2_transform_point_to_point(extrin: &Rs2Extrinsics, from_point: [f32; 3]) -> [f32; 3] {
     let rot = extrin.rotation();
     let tl = extrin.translation();
     [
@@ -191,4 +191,63 @@ pub fn rs2_transform_point_to_point(extrin: Rs2Extrinsics, from_point: [f32; 3])
         rot[1] * from_point[0] + rot[4] * from_point[1] + rot[7] * from_point[2] + tl[1],
         rot[2] * from_point[0] + rot[5] * from_point[1] + rot[8] * from_point[2] + tl[2],
     ]
+}
+
+fn align_images(
+    depth_intrin: &Rs2Intrinsics,
+    depth_to_other: &Rs2Extrinsics,
+    other_intrin: &Rs2Intrinsics,
+    depth: &[u16],
+    input_img: &[[u8; 3]],
+    output_img: &mut [[u8; 3]],
+) {
+    // Iterate over the pixels of the depth image
+    for depth_y in 0..depth_intrin.height() {
+        {
+            let mut depth_pixel_index = depth_y * depth_intrin.width();
+            for depth_x in 0..depth_intrin.width() {
+                depth_pixel_index += 1;
+
+                // Skip over depth pixels with the value of zero, we have no depth data so we will not write anything into our aligned images
+                let depth = depth[depth_pixel_index];
+                if depth == 0 {
+                    continue;
+                }
+                // Map the top-left corner of the depth pixel onto the other image
+                let depth_pixel = [depth_x as f32 - 0.5, depth_y as f32 - 0.5];
+                let depth_point =
+                    rs2_deproject_pixel_to_point(depth_intrin, depth_pixel, f32::from(depth));
+                let other_point = rs2_transform_point_to_point(depth_to_other, depth_point);
+                let other_pixel = rs2_project_point_to_pixel(other_intrin, other_point);
+                let other_x0 = (other_pixel[0] + 0.5) as i32;
+                let other_y0 = (other_pixel[1] + 0.5) as i32;
+
+                // Map the bottom-right corner of the depth pixel onto the other image
+                let depth_pixel = [depth_x as f32 + 0.5, depth_y as f32 + 0.5];
+                let depth_point =
+                    rs2_deproject_pixel_to_point(depth_intrin, depth_pixel, f32::from(depth));
+                let other_point = rs2_transform_point_to_point(depth_to_other, depth_point);
+                let other_pixel = rs2_project_point_to_pixel(other_intrin, other_point);
+                let other_x1 = (other_pixel[0] + 0.5) as i32;
+                let other_y1 = (other_pixel[1] + 0.5) as i32;
+
+                if other_x0 < 0
+                    || other_y0 < 0
+                    || other_x1 >= other_intrin.width() as i32
+                    || other_y1 >= other_intrin.height() as i32
+                {
+                    continue;
+                }
+
+                // Transfer between the depth pixels and the pixels inside the rectangle on the other image
+                for y in other_y0..=other_y1 {
+                    for x in other_x0..=other_x1 {
+                        let x = x as usize;
+                        let y = y as usize;
+                        output_img[depth_pixel_index] = input_img[y * other_intrin.width() + x];
+                    }
+                }
+            }
+        }
+    }
 }

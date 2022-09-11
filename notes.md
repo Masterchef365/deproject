@@ -24,3 +24,6 @@ struct CapturePlan {
 `cargo run --bin slime`
 
 For the recorder, have dual system. The main thread will do the graphics. The other thread will do the capturing and saving.
+
+```
+align::align_other_to_z
