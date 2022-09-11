@@ -1,7 +1,7 @@
 use std::collections::HashSet;
-use std::{path::Path, time::Duration};
 use std::fs::File;
 use std::io::BufWriter;
+use std::{path::Path, time::Duration};
 
 use glow::*;
 
@@ -17,7 +17,9 @@ use realsense_rust::{
 
 mod project;
 
-use anyhow::{Result, ensure, Ok};
+use anyhow::{ensure, Ok, Result};
+
+use crate::project::align_images;
 
 fn main() -> Result<()> {
     // Check for depth or color-compatible devices.
@@ -41,21 +43,73 @@ fn main() -> Result<()> {
     // Change pipeline's type from InactivePipeline -> ActivePipeline
     let mut pipeline = pipeline.start(Some(config))?;
 
+    let streams = pipeline.profile().streams();
+
+    let depth_stream = streams
+        .iter()
+        .find(|p| p.kind() == Rs2StreamKind::Depth)
+        .unwrap();
+    let color_stream = streams
+        .iter()
+        .find(|p| p.kind() == Rs2StreamKind::Color)
+        .unwrap();
+
+    let depth_intrinsics = depth_stream.intrinsics()?;
+    let depth_to_color_extrinsics = depth_stream.extrinsics(color_stream)?;
+    let color_intrinsics = color_stream.intrinsics()?;
+
+    let mut in_color_buf: Vec<[u8; 3]> = vec![];
+    let mut in_depth_buf: Vec<u16> = vec![];
+    let mut out_color_buf: Vec<[u8; 3]> = vec![];
+
     let timeout = Duration::from_millis(2000);
+    let mut i = 0;
     loop {
         let frames = pipeline.wait(Some(timeout)).unwrap();
-        let color_frames: Vec<ColorFrame> = frames.frames_of_type();
-        let depth_frames: Vec<DepthFrame> = frames.frames_of_type();
+        let color_frame: &ColorFrame = &frames.frames_of_type()[0];
+        let depth_frame: &DepthFrame = &frames.frames_of_type()[0];
 
-        if !color_frames.is_empty() {
-            let color_frame = &color_frames[0];
-        }
-        if !depth_frames.is_empty() {
-            let depth_frame = &depth_frames[0];
-        }
+        in_depth_buf.clear();
+        in_color_buf.clear();
+        out_color_buf.clear();
+
+        in_depth_buf.extend(depth_frame.iter().map(|p| match p {
+            PixelKind::Z16 { depth } => depth,
+            _ => panic!(),
+        }));
+
+        in_color_buf.extend(color_frame.iter().map(|p| match p {
+            PixelKind::Bgr8 { b, g, r } => [*r, *g, *b],
+            _ => panic!("{:?}", p),
+        }));
+
+        out_color_buf.resize(in_depth_buf.len(), [0; 3]);
+
+        //in_color_buf.resize(color_frame.width() * color_frame.height(), [0; 3]);
+        //in_depth_buf.resize(depth_frame.width() * depth_frame.height(), 0);
+        //out_color_buf.resize(depth_frame.width() * depth_frame.height(), [0; 3]);
+
+        align_images(
+            &depth_intrinsics,
+            &depth_to_color_extrinsics,
+            &color_intrinsics,
+            &in_depth_buf,
+            &in_color_buf,
+            &mut out_color_buf,
+        );
+
+        let path = format!("images/{}.png", i);
+        write_color_png(
+            Path::new(&path),
+            depth_frame.width() as _,
+            depth_frame.height() as _,
+            bytemuck::cast_slice(&out_color_buf),
+        )?;
+
+        dbg!(i);
+
+        i += 1;
     }
-
-    Ok(())
 }
 
 //fn convert_color_frame()
@@ -65,30 +119,18 @@ fn write_depth_png(path: &Path, width: u32, height: u32, data: &[u8]) -> Result<
 }
 
 fn write_color_png(path: &Path, width: u32, height: u32, data: &[u8]) -> Result<()> {
-    // For reading and opening files
-
-    let path = Path::new(r"/path/to/image.png");
-    let file = File::create(path).unwrap();
+    let file = File::create(path)?;
     let ref mut w = BufWriter::new(file);
 
-    let mut encoder = png::Encoder::new(w, 2, 1); // Width is 2 pixels and height is 1.
-    encoder.set_color(png::ColorType::Rgba);
+    let mut encoder = png::Encoder::new(w, width, height); // Width is 2 pixels and height is 1.
+    encoder.set_color(png::ColorType::Rgb);
     encoder.set_depth(png::BitDepth::Eight);
-    encoder.set_trns(vec!(0xFFu8, 0xFFu8, 0xFFu8, 0xFFu8));
-    encoder.set_source_gamma(png::ScaledFloat::from_scaled(45455)); // 1.0 / 2.2, scaled by 100000
-    encoder.set_source_gamma(png::ScaledFloat::new(1.0 / 2.2));     // 1.0 / 2.2, unscaled, but rounded
-    let source_chromaticities = png::SourceChromaticities::new(     // Using unscaled instantiation here
-        (0.31270, 0.32900),
-        (0.64000, 0.33000),
-        (0.30000, 0.60000),
-        (0.15000, 0.06000)
-    );
-    encoder.set_source_chromaticities(source_chromaticities);
-    let mut writer = encoder.write_header().unwrap();
 
-    let data = [255, 0, 0, 255, 0, 0, 0, 255]; // An array containing a RGBA sequence. First pixel is red and second pixel is black.
-    writer.write_image_data(&data).unwrap(); // Save
-    todo!()
+    let mut writer = encoder.write_header()?;
+
+    writer.write_image_data(&data)?;
+
+    Ok(())
 }
 
 fn pmain() {

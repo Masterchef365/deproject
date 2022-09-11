@@ -193,7 +193,7 @@ pub fn rs2_transform_point_to_point(extrin: &Rs2Extrinsics, from_point: [f32; 3]
     ]
 }
 
-fn align_images(
+pub fn align_images(
     depth_intrin: &Rs2Intrinsics,
     depth_to_other: &Rs2Extrinsics,
     other_intrin: &Rs2Intrinsics,
@@ -203,49 +203,47 @@ fn align_images(
 ) {
     // Iterate over the pixels of the depth image
     for depth_y in 0..depth_intrin.height() {
-        {
-            let mut depth_pixel_index = depth_y * depth_intrin.width();
-            for depth_x in 0..depth_intrin.width() {
-                depth_pixel_index += 1;
+        let mut depth_pixel_index = depth_y * depth_intrin.width();
+        for depth_x in 0..depth_intrin.width() {
+            depth_pixel_index += 1;
 
-                // Skip over depth pixels with the value of zero, we have no depth data so we will not write anything into our aligned images
-                let depth = depth[depth_pixel_index];
-                if depth == 0 {
-                    continue;
-                }
-                // Map the top-left corner of the depth pixel onto the other image
-                let depth_pixel = [depth_x as f32 - 0.5, depth_y as f32 - 0.5];
-                let depth_point =
-                    rs2_deproject_pixel_to_point(depth_intrin, depth_pixel, f32::from(depth));
-                let other_point = rs2_transform_point_to_point(depth_to_other, depth_point);
-                let other_pixel = rs2_project_point_to_pixel(other_intrin, other_point);
-                let other_x0 = (other_pixel[0] + 0.5) as i32;
-                let other_y0 = (other_pixel[1] + 0.5) as i32;
+            // Skip over depth pixels with the value of zero, we have no depth data so we will not write anything into our aligned images
+            let depth = depth[depth_pixel_index];
+            if depth == 0 {
+                continue;
+            }
+            // Map the top-left corner of the depth pixel onto the other image
+            let depth_pixel = [depth_x as f32 - 0.5, depth_y as f32 - 0.5];
+            let depth_point =
+                rs2_deproject_pixel_to_point(depth_intrin, depth_pixel, f32::from(depth));
+            let other_point = rs2_transform_point_to_point(depth_to_other, depth_point);
+            let other_pixel = rs2_project_point_to_pixel(other_intrin, other_point);
+            let other_x0 = (other_pixel[0] + 0.5) as i32;
+            let other_y0 = (other_pixel[1] + 0.5) as i32;
 
-                // Map the bottom-right corner of the depth pixel onto the other image
-                let depth_pixel = [depth_x as f32 + 0.5, depth_y as f32 + 0.5];
-                let depth_point =
-                    rs2_deproject_pixel_to_point(depth_intrin, depth_pixel, f32::from(depth));
-                let other_point = rs2_transform_point_to_point(depth_to_other, depth_point);
-                let other_pixel = rs2_project_point_to_pixel(other_intrin, other_point);
-                let other_x1 = (other_pixel[0] + 0.5) as i32;
-                let other_y1 = (other_pixel[1] + 0.5) as i32;
+            // Map the bottom-right corner of the depth pixel onto the other image
+            let depth_pixel = [depth_x as f32 + 0.5, depth_y as f32 + 0.5];
+            let depth_point =
+                rs2_deproject_pixel_to_point(depth_intrin, depth_pixel, f32::from(depth));
+            let other_point = rs2_transform_point_to_point(depth_to_other, depth_point);
+            let other_pixel = rs2_project_point_to_pixel(other_intrin, other_point);
+            let other_x1 = (other_pixel[0] + 0.5) as i32;
+            let other_y1 = (other_pixel[1] + 0.5) as i32;
 
-                if other_x0 < 0
-                    || other_y0 < 0
-                    || other_x1 >= other_intrin.width() as i32
-                    || other_y1 >= other_intrin.height() as i32
-                {
-                    continue;
-                }
+            if other_x0 < 0
+                || other_y0 < 0
+                || other_x1 >= other_intrin.width() as i32
+                || other_y1 >= other_intrin.height() as i32
+            {
+                continue;
+            }
 
-                // Transfer between the depth pixels and the pixels inside the rectangle on the other image
-                for y in other_y0..=other_y1 {
-                    for x in other_x0..=other_x1 {
-                        let x = x as usize;
-                        let y = y as usize;
-                        output_img[depth_pixel_index] = input_img[y * other_intrin.width() + x];
-                    }
+            // Transfer between the depth pixels and the pixels inside the rectangle on the other image
+            for y in other_y0..=other_y1 {
+                for x in other_x0..=other_x1 {
+                    let x = x as usize;
+                    let y = y as usize;
+                    output_img[depth_pixel_index] = input_img[y * other_intrin.width() + x];
                 }
             }
         }
