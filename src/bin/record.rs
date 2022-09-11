@@ -3,6 +3,8 @@ use std::fs::File;
 use std::io::BufWriter;
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::sync::{Mutex, Arc, mpsc};
+use std::sync::mpsc::{Receiver, Sender};
 use std::{path::Path, time::Duration};
 
 use glow::*;
@@ -25,26 +27,15 @@ use deproject::project::align_images;
 use clap::Parser;
 use deproject::{RecordArgs, record_samples, PatternSample};
 
-fn gmain() -> Result<()> {
-    let args = RecordArgs::parse();
-
-    let images_root = PathBuf::from("images");
-    if !images_root.is_dir() {
-        std::fs::create_dir(&images_root)?;
-    }
-
-    let images_path = images_root.join(&args.name);
-
-    for pat in record_samples(&args) {
-        let f = pat.to_string();
-        let p2: PatternSample = PatternSample::from_str(&f).unwrap();
-        dbg!(pat, p2);
-    }
-
-    Ok(())
+fn pattern_to_param(pat: PatternSample) -> [f32; 3] {
+    [
+        pat.step as f32,
+        if pat.orient { 1. } else { 0. },
+        if pat.sign { 1. } else { 0. },
+    ]
 }
 
-fn main() -> Result<()> {
+fn capture_thread(rx: Receiver<Vec<PatternSample>>, lock: Sender<()>, images_path: PathBuf) -> Result<()> {
     // Check for depth or color-compatible devices.
     let queried_devices = HashSet::new(); // Query any devices
     let context = Context::new()?;
@@ -86,64 +77,68 @@ fn main() -> Result<()> {
     let mut out_color_buf: Vec<[u8; 3]> = vec![];
 
     let timeout = Duration::from_millis(2000);
-    let mut i = 0;
     loop {
-        let frames = pipeline.wait(Some(timeout)).unwrap();
-        let color_frame: &ColorFrame = &frames.frames_of_type()[0];
-        let depth_frame: &DepthFrame = &frames.frames_of_type()[0];
+        let set = rx.recv().unwrap();
 
-        in_depth_buf.clear();
-        in_color_buf.clear();
-        out_color_buf.clear();
+        for pat in set {
+            let frames = pipeline.wait(Some(timeout)).unwrap();
+            let color_frame: &ColorFrame = &frames.frames_of_type()[0];
+            let depth_frame: &DepthFrame = &frames.frames_of_type()[0];
 
-        in_depth_buf.extend(depth_frame.iter().map(|p| match p {
-            PixelKind::Z16 { depth } => depth,
-            _ => panic!("{:?}", p),
-        }));
+            in_depth_buf.clear();
+            in_color_buf.clear();
+            out_color_buf.clear();
 
-        in_color_buf.extend(color_frame.iter().map(|p| match p {
-            PixelKind::Bgr8 { b, g, r } => [*r, *g, *b],
-            _ => panic!("{:?}", p),
-        }));
+            in_depth_buf.extend(depth_frame.iter().map(|p| match p {
+                PixelKind::Z16 { depth } => depth,
+                _ => panic!("{:?}", p),
+            }));
 
-        out_color_buf.resize(in_depth_buf.len(), [0; 3]);
+            in_color_buf.extend(color_frame.iter().map(|p| match p {
+                PixelKind::Bgr8 { b, g, r } => [*r, *g, *b],
+                _ => panic!("{:?}", p),
+            }));
 
-        align_images(
-            &depth_intrinsics,
-            &depth_to_color_extrinsics,
-            &color_intrinsics,
-            &in_depth_buf,
-            &in_color_buf,
-            &mut out_color_buf,
-        );
+            out_color_buf.resize(in_depth_buf.len(), [0; 3]);
 
-        let path = format!("images/color_to_depth_{}.png", i);
-        write_color_png(
-            Path::new(&path),
-            depth_frame.width() as _,
-            depth_frame.height() as _,
-            bytemuck::cast_slice(&out_color_buf),
-        )?;
+            align_images(
+                &depth_intrinsics,
+                &depth_to_color_extrinsics,
+                &color_intrinsics,
+                &in_depth_buf,
+                &in_color_buf,
+                &mut out_color_buf,
+            );
 
-        let path = format!("images/color_{}.png", i);
-        write_color_png(
-            Path::new(&path),
-            color_frame.width() as _,
-            color_frame.height() as _,
-            bytemuck::cast_slice(&in_color_buf),
-        )?;
+            let path = images_path.join(format!("{}_color.png", pat.to_string()));
+            write_color_png(
+                Path::new(&path),
+                depth_frame.width() as _,
+                depth_frame.height() as _,
+                bytemuck::cast_slice(&out_color_buf),
+            )?;
 
-        let path = format!("images/depth_{}.png", i);
-        write_depth_png(
-            Path::new(&path),
-            depth_frame.width() as u32,
-            depth_frame.height() as _,
-            &in_depth_buf,
-        )?;
+            /*
+            let path = format!("images/original_color_{}.png", i);
+            write_color_png(
+                Path::new(&path),
+                color_frame.width() as _,
+                color_frame.height() as _,
+                bytemuck::cast_slice(&in_color_buf),
+            )?;
+            */
 
-        dbg!(i);
+            let path = images_path.join(format!("{}_depth.png", pat.to_string()));
+            write_depth_png(
+                Path::new(&path),
+                depth_frame.width() as u32,
+                depth_frame.height() as _,
+                &in_depth_buf,
+            )?;
 
-        i += 1;
+        }
+
+        lock.send(()).unwrap();
     }
 }
 
@@ -178,7 +173,27 @@ fn write_color_png(path: &Path, width: u32, height: u32, data: &[u8]) -> Result<
     Ok(())
 }
 
-fn pmain() {
+fn main() -> Result<()> {
+    let args = RecordArgs::parse();
+
+    let images_root = PathBuf::from("images");
+    if !images_root.is_dir() {
+        std::fs::create_dir(&images_root)?;
+    }
+
+    let images_path = images_root.join(&args.name);
+    if !images_path.is_dir() {
+        std::fs::create_dir(&images_path)?;
+    }
+
+    let mut pat_sets = record_samples(&args);
+
+    let (tx, rx) = mpsc::channel();
+    let (lock_tx, lock_rx) = mpsc::channel();
+
+    let imgs = images_path.clone();
+    std::thread::spawn(|| capture_thread(rx, lock_tx, imgs).unwrap());
+
     unsafe {
         let (gl, shader_version, window, event_loop) = {
             let event_loop = glutin::event_loop::EventLoop::new();
@@ -239,6 +254,9 @@ fn pmain() {
         gl.use_program(Some(program));
         gl.clear_color(0.1, 0.2, 0.3, 1.0);
 
+        let loc = gl.get_uniform_location(program, "params");
+        assert!(loc.is_some());
+
         // We handle events differently between targets
 
         use glutin::event::{Event, WindowEvent};
@@ -254,9 +272,20 @@ fn pmain() {
                     window.window().request_redraw();
                 }
                 Event::RedrawRequested(_) => {
-                    gl.clear(glow::COLOR_BUFFER_BIT);
-                    gl.draw_arrays(glow::TRIANGLES, 0, 3);
-                    window.swap_buffers().unwrap();
+                    if let Some(set) = pat_sets.pop() {
+                        let [x, y, z] = pattern_to_param(set[0]);
+                        gl.uniform_3_f32(loc.as_ref(), x, y, z);
+                        gl.clear(glow::COLOR_BUFFER_BIT);
+                        gl.draw_arrays(glow::TRIANGLES, 0, 3);
+                        window.swap_buffers().unwrap();
+
+                        tx.send(set).unwrap();
+                        lock_rx.recv().unwrap();
+
+
+                    } else {
+                        *control_flow = ControlFlow::Exit
+                    }
                 }
                 Event::WindowEvent { ref event, .. } => match event {
                     WindowEvent::Resized(physical_size) => {

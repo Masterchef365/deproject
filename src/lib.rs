@@ -16,11 +16,11 @@ pub struct RecordArgs {
     pub max_steps: usize,
 
     /// Number of samples
-    #[clap(short, long, value_parser, default_value_t = 5)]
+    #[clap(short, long, value_parser, default_value_t = 50)]
     pub samples: usize,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct PatternSample {
     /// Step number
     pub step: usize,
@@ -74,19 +74,21 @@ impl FromStr for PatternSample {
     }
 }
 
-pub fn record_samples(args: &RecordArgs) -> Vec<PatternSample> {
+pub fn record_samples(args: &RecordArgs) -> Vec<Vec<PatternSample>> {
     let mut pat = vec![];
     for orient in [true, false] {
         for step in 0..args.max_steps {
             for color in [true, false] {
+                let mut set = vec![];
                 for idx in 0..args.samples {
-                    pat.push(PatternSample {
+                    set.push(PatternSample {
                         step,
                         orient,
                         sign: color,
                         idx,
                     });
                 }
+                pat.push(set);
             }
         }
     }
