@@ -3,12 +3,13 @@ use std::fs::File;
 use std::io::BufWriter;
 use std::path::PathBuf;
 use std::str::FromStr;
-use std::sync::{Mutex, Arc, mpsc};
 use std::sync::mpsc::{Receiver, Sender};
+use std::sync::{mpsc, Arc, Mutex};
 use std::{path::Path, time::Duration};
 
 use glow::*;
 
+use glutin::window::Fullscreen;
 use realsense_rust::kind::Rs2Option;
 use realsense_rust::{
     config::Config,
@@ -19,15 +20,14 @@ use realsense_rust::{
     pipeline::InactivePipeline,
 };
 
-
 use anyhow::{ensure, Ok, Result};
 
 use deproject::project::align_images;
 
 use clap::Parser;
-use deproject::{RecordArgs, record_samples, PatternSample};
+use deproject::{record_samples, PatternSample, RecordArgs};
 
-fn pattern_to_param(pat: PatternSample) -> [f32; 3] {
+fn pattern_to_param(pat: &PatternSample) -> [f32; 3] {
     [
         pat.step as f32,
         if pat.orient { 1. } else { 0. },
@@ -35,7 +35,11 @@ fn pattern_to_param(pat: PatternSample) -> [f32; 3] {
     ]
 }
 
-fn capture_thread(rx: Receiver<Vec<PatternSample>>, lock: Sender<()>, images_path: PathBuf) -> Result<()> {
+fn capture_thread(
+    rx: Receiver<Vec<PatternSample>>,
+    lock: Sender<()>,
+    images_path: PathBuf,
+) -> Result<()> {
     // Check for depth or color-compatible devices.
     let queried_devices = HashSet::new(); // Query any devices
     let context = Context::new()?;
@@ -75,6 +79,13 @@ fn capture_thread(rx: Receiver<Vec<PatternSample>>, lock: Sender<()>, images_pat
     let mut in_color_buf: Vec<[u8; 3]> = vec![];
     let mut in_depth_buf: Vec<u16> = vec![];
     let mut out_color_buf: Vec<[u8; 3]> = vec![];
+
+    println!("Hit enter to continue");
+    std::io::stdin().lines().next().unwrap().unwrap();
+    for n in (1..=3).rev() {
+        println!("Starting in {}...", n);
+        std::thread::sleep(Duration::from_secs(1));
+    }
 
     let timeout = Duration::from_millis(2000);
     loop {
@@ -135,7 +146,6 @@ fn capture_thread(rx: Receiver<Vec<PatternSample>>, lock: Sender<()>, images_pat
                 depth_frame.height() as _,
                 &in_depth_buf,
             )?;
-
         }
 
         lock.send(()).unwrap();
@@ -156,7 +166,6 @@ fn write_depth_png(path: &Path, width: u32, height: u32, data: &[u16]) -> Result
 
     Ok(())
 }
-
 
 fn write_color_png(path: &Path, width: u32, height: u32, data: &[u8]) -> Result<()> {
     let file = File::create(path)?;
@@ -199,6 +208,7 @@ fn main() -> Result<()> {
             let event_loop = glutin::event_loop::EventLoop::new();
             let window_builder = glutin::window::WindowBuilder::new()
                 .with_title("Calibrator")
+                .with_fullscreen((!args.no_fullscreen).then(|| Fullscreen::Borderless(None)))
                 .with_inner_size(glutin::dpi::LogicalSize::new(1024.0, 768.0));
             let window = glutin::ContextBuilder::new()
                 .with_vsync(true)
@@ -262,12 +272,9 @@ fn main() -> Result<()> {
         use glutin::event::{Event, WindowEvent};
         use glutin::event_loop::ControlFlow;
 
-        println!("Hit enter to continue");
-        std::io::stdin().lines().next().unwrap().unwrap();
-        for n in (1..=3).rev() {
-            println!("Starting in {}...", n);
-            std::thread::sleep(Duration::from_secs(1));
-        }
+        let init = pat_sets.pop().unwrap();
+        let mut current_params = init[0];
+        tx.send(init).unwrap();
 
         event_loop.run(move |event, _, control_flow| {
             *control_flow = ControlFlow::Wait;
@@ -279,21 +286,20 @@ fn main() -> Result<()> {
                     window.window().request_redraw();
                 }
                 Event::RedrawRequested(_) => {
-                    if let Some(set) = pat_sets.pop() {
-                        let [x, y, z] = pattern_to_param(set[0]);
-                        gl.uniform_3_f32(loc.as_ref(), x, y, z);
-                        gl.clear(glow::COLOR_BUFFER_BIT);
-                        gl.draw_arrays(glow::TRIANGLES, 0, 3);
+                    let [x, y, z] = pattern_to_param(&current_params);
+                    gl.uniform_3_f32(loc.as_ref(), x, y, z);
+                    gl.clear(glow::COLOR_BUFFER_BIT);
+                    gl.draw_arrays(glow::TRIANGLES, 0, 3);
 
-                        window.swap_buffers().unwrap();
+                    window.swap_buffers().unwrap();
 
-                        std::thread::sleep(Duration::from_secs(1));
-                        tx.send(set).unwrap();
-                        lock_rx.recv().unwrap();
-
-
-                    } else {
-                        *control_flow = ControlFlow::Exit
+                    if lock_rx.try_iter().next().is_some() {
+                        if let Some(set) = pat_sets.pop() {
+                            current_params = set[0];
+                            tx.send(set).unwrap();
+                        } else {
+                            *control_flow = ControlFlow::Exit
+                        }
                     }
                 }
                 Event::WindowEvent { ref event, .. } => match event {

@@ -18,6 +18,10 @@ pub struct RecordArgs {
     /// Number of samples
     #[clap(short, long, value_parser, default_value_t = 20)]
     pub samples: usize,
+
+    /// Do not fullscreen
+    #[clap(short = 'f', long, value_parser)]
+    pub no_fullscreen: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
