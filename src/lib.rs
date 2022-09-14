@@ -219,6 +219,10 @@ impl<T> MinimalImage<T> {
         &self.data
     }
 
+    pub fn data_mut(&mut self) -> &mut [T] {
+        &mut self.data
+    }
+
     pub fn map<U, const N: usize>(&self, f: impl Fn(&[T]) -> [U; N]) -> MinimalImage<U> {
         let data = self
             .data()

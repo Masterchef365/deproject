@@ -8,20 +8,52 @@ fn main() -> Result<()> {
 
     let paths = Paths::from_root(&path)?;
 
-    let v = &paths.horiz[7][9];
-    let a = load_color_png(&v[0].color)?;
-    let b = load_color_png(&v[1].color)?;
+    let prep = prepare_data(&paths.horiz, 7)?;
 
-    let a = a.map(|c| [intensity(c)]);
-    let b = b.map(|c| [intensity(c)]);
-
-    let d = diff(&a, &b);
+    let d = binary_difftree(&prep);
 
     let img = d.map(|c| sgncolor(c[0]));
 
     write_color_png("out.png", &img)?;
 
     Ok(())
+}
+
+fn prepare_data(paths: &SampleSet, idx: usize) -> Result<Vec<MinimalImage<bool>>> {
+    let mut levels = vec![];
+    for set in &paths[1..] {
+        let sample = &set[idx];
+
+        let a = load_color_png(&sample[0].color)?.map(|c| [intensity(c)]);
+        let b = load_color_png(&sample[1].color)?.map(|c| [intensity(c)]);
+
+        let d = diff(&a, &b);
+
+        let b = d.map(|c| [c[0] > 0.]);
+
+        levels.push(b);
+    }
+
+    Ok(levels)
+}
+
+fn binary_difftree(smp: &[MinimalImage<bool>]) -> MinimalImage<f32> {
+    let mut img = smp[0].map(|_| [0.]);
+
+    let mut int = 1.;
+    for level in smp.iter() {
+        int /= 2.;
+        img.data_mut()
+            .iter_mut()
+            .zip(level.data())
+            .for_each(|(o, i)| {
+                if *i {
+                    *o += int
+                }
+            });
+    }
+
+    img
 }
 
 fn diff(a: &MinimalImage<f32>, b: &MinimalImage<f32>) -> MinimalImage<f32> {
@@ -33,14 +65,13 @@ fn diff(a: &MinimalImage<f32>, b: &MinimalImage<f32>) -> MinimalImage<f32> {
     }
 }
 
-
 fn sgncolor(v: f32) -> [u8; 3] {
     if v > 0. {
         [1., 0.1, 0.1]
     } else {
         [0.1, 0.1, 1.]
     }
-    .map(|x| ((x * v.abs() / 256.).clamp(0., 1.) * 256.) as u8)
+    .map(|x| ((x * v.abs()).clamp(0., 1.) * 256.) as u8)
 }
 
 fn intensity(rgb: &[u8]) -> f32 {
