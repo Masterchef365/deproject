@@ -218,6 +218,16 @@ impl<T> MinimalImage<T> {
     pub fn data(&self) -> &[T] {
         &self.data
     }
+
+    pub fn map<U, const N: usize>(&self, f: impl Fn(&[T]) -> [U; N]) -> MinimalImage<U> {
+        let data = self
+            .data()
+            .chunks_exact(self.stride)
+            .map(f)
+            .flatten()
+            .collect();
+        MinimalImage::new(data, self.width(), N)
+    }
 }
 
 pub fn load_color_png(path: impl AsRef<Path>) -> Result<MinimalImage<u8>> {
