@@ -16,9 +16,9 @@ fn main() -> Result<()> {
     let prep = prepare_data(&paths.vert, idx)?;
     let y = binary_difftree(&prep);
 
-    let color = x.zip(&y, |x, y| {
-        [x[0], y[0], 0.].map(|v| (v.clamp(0., 1.) * 256.) as u8)
-    });
+    let xy = x.zip(&y, |x, y| [x[0], y[0]]);
+
+    let color = xy.map(|v| [v[0], v[1], 0.].map(|x| (x.clamp(0., 1.) * 256.) as u8));
 
     write_color_png("out.png", &color)?;
 
