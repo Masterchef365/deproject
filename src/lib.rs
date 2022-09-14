@@ -1,4 +1,10 @@
 use std::str::FromStr;
+use anyhow::Result;
+
+use std::{
+    collections::HashSet,
+    path::{Path, PathBuf},
+};
 
 use clap::Parser;
 pub mod project;
@@ -97,4 +103,74 @@ pub fn record_samples(args: &RecordArgs) -> Vec<Vec<PatternSample>> {
         }
     }
     pat
+}
+
+/// /step/idx/[false, true]
+pub type SampleSet = Vec<Vec<Vec<SamplePaths>>>;
+
+#[derive(Default, Debug)]
+pub struct SamplePaths {
+    pub color: PathBuf,
+    pub depth: PathBuf,
+}
+
+#[derive(Default, Debug)]
+pub struct Paths {
+    pub vert: SampleSet,
+    pub horiz: SampleSet,
+}
+
+impl Paths {
+    pub fn from_root(path: &Path) -> Result<Paths> {
+        let entries: HashSet<PathBuf> = std::fs::read_dir(path)?
+            .map(|d| Ok(d?.path()))
+            .collect::<Result<HashSet<PathBuf>>>()?;
+
+        let mut paths = Paths::default();
+
+        for orient in [true, false] {
+            let set = match orient {
+                true => &mut paths.horiz,
+                false => &mut paths.vert,
+            };
+
+            'step: loop {
+                let mut sample_set = vec![];
+
+                'idx: loop {
+                    let mut sign_set = vec![];
+
+                    for sign in [true, false] {
+                        let sample = PatternSample {
+                            step: set.len(),
+                            idx: sample_set.len(),
+                            orient,
+                            sign,
+                        };
+
+                        let prefix = sample.to_string();
+
+                        let color = path.join(format!("{prefix}_color.png"));
+                        let depth = path.join(format!("{prefix}_depth.png"));
+
+                        if entries.contains(&color) && entries.contains(&depth) {
+                            sign_set.push(SamplePaths { color, depth });
+                        } else {
+                            if sample_set.is_empty() {
+                                break 'step;
+                            } else {
+                                break 'idx;
+                            }
+                        }
+                    }
+
+                    sample_set.push(sign_set);
+                }
+
+                set.push(sample_set);
+            }
+        }
+
+        Ok(paths)
+    }
 }
