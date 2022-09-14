@@ -8,13 +8,19 @@ fn main() -> Result<()> {
 
     let paths = Paths::from_root(&path)?;
 
-    let prep = prepare_data(&paths.horiz, 7)?;
+    let idx = 7;
 
-    let d = binary_difftree(&prep);
+    let prep = prepare_data(&paths.horiz, idx)?;
+    let x = binary_difftree(&prep);
 
-    let img = d.map(|c| sgncolor(c[0]));
+    let prep = prepare_data(&paths.vert, idx)?;
+    let y = binary_difftree(&prep);
 
-    write_color_png("out.png", &img)?;
+    let color = x.zip(&y, |x, y| {
+        [x[0], y[0], 0.].map(|v| (v.clamp(0., 1.) * 256.) as u8)
+    });
+
+    write_color_png("out.png", &color)?;
 
     Ok(())
 }

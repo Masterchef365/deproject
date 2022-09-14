@@ -232,6 +232,22 @@ impl<T> MinimalImage<T> {
             .collect();
         MinimalImage::new(data, self.width(), N)
     }
+
+    pub fn zip<U, V, const N: usize>(
+        &self,
+        other: &MinimalImage<V>,
+        f: impl Fn(&[T], &[V]) -> [U; N],
+    ) -> MinimalImage<U> {
+        assert_eq!(self.width(), other.width());
+        let data = self
+            .data()
+            .chunks_exact(self.stride)
+            .zip(other.data().chunks_exact(other.stride))
+            .map(|(a, b)| f(a, b))
+            .flatten()
+            .collect();
+        MinimalImage::new(data, self.width(), N)
+    }
 }
 
 pub fn load_color_png(path: impl AsRef<Path>) -> Result<MinimalImage<u8>> {
