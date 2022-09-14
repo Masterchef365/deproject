@@ -8,13 +8,34 @@ fn main() -> Result<()> {
 
     let paths = Paths::from_root(&path)?;
 
-    let xy = xy_image(&paths, 7)?;
+    let idx = 7;
+    let xy = xy_image(&paths, idx)?;
 
     let color = xy.map(|v| [v[0], v[1], 0.].map(|x| (x.clamp(0., 1.) * 256.) as u8));
 
-    write_color_png("out.png", &color)?;
+    write_color_png("xy.png", &color)?;
+
+    let mask = mask(&paths, idx, 50.0)?;
+
+    let mask = mask.map(|v| [if v[0] { u8::MAX } else { 0 }; 3]);
+
+    write_color_png("mask.png", &mask)?;
 
     Ok(())
+}
+
+fn mask(paths: &Paths, idx: usize, thresh: f32) -> Result<MinimalImage<bool>> {
+    let v = 4;
+    let sample = &paths.horiz[v][idx];
+
+    let a = load_color_png(&sample[0].color)?.map(|c| [intensity(c)]);
+    let b = load_color_png(&sample[1].color)?.map(|c| [intensity(c)]);
+
+    let d = diff(&a, &b);
+
+    let mask = d.map(|v| [v[0].abs() > thresh]);
+
+    Ok(mask)
 }
 
 fn xy_image(paths: &Paths, idx: usize) -> Result<MinimalImage<f32>> {
