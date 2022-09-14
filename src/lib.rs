@@ -1,5 +1,7 @@
-use std::str::FromStr;
 use anyhow::Result;
+use std::fs::File;
+use std::io::BufWriter;
+use std::str::FromStr;
 
 use std::{
     collections::HashSet,
@@ -173,4 +175,65 @@ impl Paths {
 
         Ok(paths)
     }
+}
+
+pub fn write_color_png(path: impl AsRef<Path>, image: &MinimalImage<u8>) -> Result<()> {
+    let file = File::create(path)?;
+    let ref mut w = BufWriter::new(file);
+
+    let mut encoder = png::Encoder::new(w, image.width() as _, image.height() as _); // Width is 2 pixels and height is 1.
+    encoder.set_color(png::ColorType::Rgb);
+    encoder.set_depth(png::BitDepth::Eight);
+
+    let mut writer = encoder.write_header()?;
+
+    writer.write_image_data(image.data())?;
+
+    Ok(())
+}
+
+pub struct MinimalImage<T> {
+    pub data: Vec<T>,
+    pub row_size: usize,
+    pub stride: usize,
+}
+
+impl<T> MinimalImage<T> {
+    pub fn new(data: Vec<T>, width: usize, stride: usize) -> Self {
+        Self {
+            data,
+            row_size: width * stride,
+            stride,
+        }
+    }
+
+    pub fn height(&self) -> usize {
+        self.data.len() / self.row_size
+    }
+
+    pub fn width(&self) -> usize {
+        self.row_size / self.stride
+    }
+
+    pub fn data(&self) -> &[T] {
+        &self.data
+    }
+}
+
+pub fn load_color_png(path: impl AsRef<Path>) -> Result<MinimalImage<u8>> {
+    let decoder = png::Decoder::new(File::open(path).unwrap());
+
+    let mut reader = decoder.read_info().unwrap();
+
+    let mut data = vec![0; reader.output_buffer_size()];
+
+    let info = reader.next_frame(&mut data).unwrap();
+
+    data.truncate(info.buffer_size());
+
+    Ok(MinimalImage {
+        data,
+        stride: 3,
+        row_size: info.width as usize * 3,
+    })
 }
