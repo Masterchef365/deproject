@@ -8,8 +8,16 @@ fn main() -> Result<()> {
 
     let paths = Paths::from_root(&path)?;
 
-    let idx = 7;
+    let xy = xy_image(&paths, 7)?;
 
+    let color = xy.map(|v| [v[0], v[1], 0.].map(|x| (x.clamp(0., 1.) * 256.) as u8));
+
+    write_color_png("out.png", &color)?;
+
+    Ok(())
+}
+
+fn xy_image(paths: &Paths, idx: usize) -> Result<MinimalImage<f32>> {
     let prep = prepare_data(&paths.horiz, idx)?;
     let x = binary_difftree(&prep);
 
@@ -18,11 +26,7 @@ fn main() -> Result<()> {
 
     let xy = x.zip(&y, |x, y| [x[0], y[0]]);
 
-    let color = xy.map(|v| [v[0], v[1], 0.].map(|x| (x.clamp(0., 1.) * 256.) as u8));
-
-    write_color_png("out.png", &color)?;
-
-    Ok(())
+    Ok(xy)
 }
 
 fn prepare_data(paths: &SampleSet, idx: usize) -> Result<Vec<MinimalImage<bool>>> {
