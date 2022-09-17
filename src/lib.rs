@@ -1,4 +1,5 @@
 use anyhow::Result;
+use png::{BitDepth, ColorType};
 use std::fs::File;
 use std::io::BufWriter;
 use std::str::FromStr;
@@ -259,11 +260,37 @@ pub fn load_color_png(path: impl AsRef<Path>) -> Result<MinimalImage<u8>> {
 
     let info = reader.next_frame(&mut data).unwrap();
 
+    assert_eq!(info.bit_depth, BitDepth::Eight);
+    assert_eq!(info.color_type, ColorType::Rgb);
+
     data.truncate(info.buffer_size());
 
     Ok(MinimalImage {
         data,
         stride: 3,
         row_size: info.width as usize * 3,
+    })
+}
+
+pub fn load_depth_png(path: impl AsRef<Path>) -> Result<MinimalImage<u16>> {
+    let decoder = png::Decoder::new(File::open(path).unwrap());
+
+    let mut reader = decoder.read_info().unwrap();
+
+    let mut data = vec![0; reader.output_buffer_size()];
+
+    let info = reader.next_frame(&mut data).unwrap();
+
+    assert_eq!(info.bit_depth, BitDepth::Sixteen);
+    assert_eq!(info.color_type, ColorType::Grayscale);
+
+    data.truncate(info.buffer_size());
+
+    let data = bytemuck::cast_slice(&data).to_vec();
+
+    Ok(MinimalImage {
+        data,
+        stride: 1,
+        row_size: info.width as usize * 1,
     })
 }

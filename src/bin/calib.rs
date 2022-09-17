@@ -1,6 +1,9 @@
-use anyhow::{Context, Result};
+use anyhow::{Context, Ok, Result};
 use deproject::*;
-use std::path::PathBuf;
+use std::{
+    io::{self, Write, BufWriter},
+    path::{Path, PathBuf},
+};
 
 fn main() -> Result<()> {
     let mut args = std::env::args().skip(1);
@@ -17,11 +20,61 @@ fn main() -> Result<()> {
 
     let mask = mask(&paths, idx, 50.0)?;
 
-    let mask = mask.map(|v| [if v[0] { u8::MAX } else { 0 }; 3]);
+    let mask_color = mask.map(|v| [if v[0] { u8::MAX } else { 0 }; 3]);
 
-    write_color_png("mask.png", &mask)?;
+    write_color_png("mask.png", &mask_color)?;
+
+    let depth = load_depth_png(
+        path.join(format!(
+            "{}_depth.png",
+            PatternSample {
+                step: 0,
+                orient: false,
+                sign: false,
+                idx: 0
+            }
+            .to_string()
+        )),
+    )?;
+
+    let pcld = pointcloud(&xy, &depth, &mask);
+
+    write_pcld("out.csv", &pcld)?;
 
     Ok(())
+}
+
+fn write_pcld(path: impl AsRef<Path>, pcld: &[[f32; 3]]) -> Result<()> {
+    let f = std::fs::File::create(path)?;
+    let mut f = BufWriter::new(f);
+
+    for &[x, y, z] in pcld {
+        writeln!(f, "{},{},{}", x, y, z / 1000.)?;
+    }
+
+    Ok(())
+}
+
+fn pointcloud(
+    xy: &MinimalImage<f32>,
+    depth: &MinimalImage<u16>,
+    mask: &MinimalImage<bool>,
+) -> Vec<[f32; 3]> {
+    assert_eq!(mask.width(), xy.width());
+    assert_eq!(depth.width(), xy.width());
+    assert_eq!(mask.height(), xy.height());
+    assert_eq!(depth.height(), xy.height());
+
+    let mut pcld = vec![];
+
+    for ((xy, depth), mask) in xy.data().chunks_exact(2).zip(depth.data()).zip(mask.data()) {
+        if *mask {
+            // TODO: Use camera intrinsics
+            pcld.push([xy[0], xy[1], *depth as f32]);
+        }
+    }
+
+    pcld
 }
 
 fn mask(paths: &Paths, idx: usize, thresh: f32) -> Result<MinimalImage<bool>> {
