@@ -1,7 +1,9 @@
 use anyhow::{Context, Ok, Result};
-use deproject::*;
+use deproject::{project::rs2_deproject_pixel_to_point, *};
+use realsense_rust::base::Rs2Intrinsics;
 use std::{
-    io::{self, Write, BufWriter},
+    fs::File,
+    io::{self, BufWriter, Write},
     path::{Path, PathBuf},
 };
 
@@ -18,14 +20,7 @@ fn main() -> Result<()> {
 
     write_color_png("xy.png", &color)?;
 
-    let mask = mask(&paths, idx, 50.0)?;
-
-    let mask_color = mask.map(|v| [if v[0] { u8::MAX } else { 0 }; 3]);
-
-    write_color_png("mask.png", &mask_color)?;
-
-    let depth = load_depth_png(
-        path.join(format!(
+    let depth = load_depth_png(path.join(format!(
             "{}_depth.png",
             PatternSample {
                 step: 0,
@@ -34,10 +29,21 @@ fn main() -> Result<()> {
                 idx: 0
             }
             .to_string()
-        )),
-    )?;
+        )))?;
 
-    let pcld = pointcloud(&xy, &depth, &mask);
+    let mask = mask(&paths, idx, 50.0)?;
+    let mask = mask.zip(&depth, |m, d| [m[0] && d[0] != 0]);
+
+    let mask_color = mask.map(|v| [if v[0] { u8::MAX } else { 0 }; 3]);
+
+    write_color_png("mask.png", &mask_color)?;
+
+    let f = File::open(path.join("intrinsics.json"))?;
+    let intrinsics: Rs2IntrinsicsSerde = serde_json::from_reader(f)?;
+    let intrinsics: Rs2Intrinsics = Rs2Intrinsics(intrinsics.into());
+
+    //let pcld = pointcloud(&xy, &depth, &mask, &intrinsics);
+    let pcld = pointcloud(&depth, &mask, &intrinsics);
 
     write_pcld("out.csv", &pcld)?;
 
@@ -49,28 +55,41 @@ fn write_pcld(path: impl AsRef<Path>, pcld: &[[f32; 3]]) -> Result<()> {
     let mut f = BufWriter::new(f);
 
     for &[x, y, z] in pcld {
-        writeln!(f, "{},{},{}", x, y, z / 1000.)?;
+        writeln!(f, "{},{},{}", x, y, z)?;
     }
 
     Ok(())
 }
 
 fn pointcloud(
-    xy: &MinimalImage<f32>,
+    //xy: &MinimalImage<f32>,
     depth: &MinimalImage<u16>,
     mask: &MinimalImage<bool>,
+    intrinsics: &Rs2Intrinsics,
 ) -> Vec<[f32; 3]> {
-    assert_eq!(mask.width(), xy.width());
-    assert_eq!(depth.width(), xy.width());
-    assert_eq!(mask.height(), xy.height());
-    assert_eq!(depth.height(), xy.height());
+    assert_eq!(mask.width(), depth.width());
+    assert_eq!(depth.height(), mask.height());
 
     let mut pcld = vec![];
 
-    for ((xy, depth), mask) in xy.data().chunks_exact(2).zip(depth.data()).zip(mask.data()) {
-        if *mask {
-            // TODO: Use camera intrinsics
-            pcld.push([xy[0], xy[1], *depth as f32]);
+    for (row_idx, (depth_row, mask_row)) in depth
+        .data()
+        .chunks_exact(depth.row_size)
+        .zip(mask.data().chunks_exact(mask.row_size))
+        .enumerate()
+    {
+        for (col_idx, (depth, mask)) in depth_row.iter().zip(mask_row).enumerate() {
+            if *mask {
+                let pt = rs2_deproject_pixel_to_point(
+                    intrinsics,
+                    [col_idx as f32 - 0.5, row_idx as f32 - 0.5],
+                    *depth as f32,
+                );
+
+                let pt = pt.map(|v| v / 1e3);
+
+                pcld.push([pt[0], -pt[1], pt[2]]);
+            }
         }
     }
 
