@@ -55,21 +55,21 @@ fn main() -> Result<()> {
         .map(|(xy, _)| [xy[0], xy[1]])
         .collect();
 
-    let mut rng = SmallRng::seed_from_u64(0);
+    let rng = SmallRng::seed_from_u64(0);
 
     let mut output_xyz = pcld.to_vec();
-    let mut output_rg = pcld_xy.to_vec();
+    let mut output_rg = vec![];//pcld_xy.to_vec();
 
-    for i in 0..1_000 {
-        let model = create_model(&mut rng, &pcld, &pcld_xy).unwrap();
-        let origin = model_origin(model);
+    let model = best_model(rng, &pcld, &pcld_xy, 100);
 
-        let mse = model_mse(model, &pcld, &pcld_xy);
-
-        dbg!(mse);
-
-        output_xyz.push(*origin.coords.as_ref());
-        output_rg.push([mse * 10., 1.]);
+    for &[x, y, z] in &pcld {
+        let xyz = Vector4::new(x, y, z, 1.);
+        let uv = model * xyz;
+        if uv.x >= 0. && uv.x <= 1. && uv.y >= 0. && uv.y <= 1. {
+            output_rg.push([uv.x, uv.y]);
+        } else {
+            output_rg.push([0.1, 0.1]);
+        }
     }
 
     write_pcld("out.csv", &output_xyz, &output_rg)?;
@@ -79,8 +79,24 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn best_model(pcld: &[[f32; 3]], xy: &[[f32; 2]], iters: usize) -> Matrix2x4<f32> {
-    todo!()
+fn best_model(mut rng: impl Rng, pcld: &[[f32; 3]], xy: &[[f32; 2]], iters: usize) -> Matrix2x4<f32> {
+    let mut best_mse = f32::INFINITY;
+    let mut best_model = Matrix2x4::zeros();
+
+    for _ in 0..iters {
+        let model = create_model(&mut rng, &pcld, xy).unwrap();
+        let mse = model_mse(model, &pcld, xy);
+
+        if mse < best_mse {
+            best_mse = mse;
+            best_model = model;
+        }
+
+        //output_xyz.push(*origin.coords.as_ref());
+        //output_rg.push([mse * 10., 1.]);
+    }
+
+    best_model
 }
 
 fn model_mse(model: Matrix2x4<f32>, pcld: &[[f32; 3]], xy: &[[f32; 2]]) -> f32 {
