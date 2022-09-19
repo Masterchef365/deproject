@@ -25,7 +25,7 @@ use anyhow::{ensure, Ok, Result};
 use deproject::project::align_images;
 
 use clap::Parser;
-use deproject::{record_samples, PatternSample, RecordArgs};
+use deproject::{record_samples, PatternSample, RecordArgs, Rs2IntrinsicsSerde};
 
 fn pattern_to_param(pat: &PatternSample) -> [f32; 3] {
     [
@@ -79,6 +79,11 @@ fn capture_thread(
     let mut in_color_buf: Vec<[u8; 3]> = vec![];
     let mut in_depth_buf: Vec<u16> = vec![];
     let mut out_color_buf: Vec<[u8; 3]> = vec![];
+
+    // Write intrinsics to file
+    let depth_intrinsics_serde: Rs2IntrinsicsSerde = depth_intrinsics.0.into();
+    let f = File::create(images_path.join("intrinsics.json"))?;
+    serde_json::to_writer(f, &depth_intrinsics_serde)?;
 
     println!("Hit enter to continue");
     std::io::stdin().lines().next().unwrap().unwrap();
