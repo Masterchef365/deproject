@@ -45,17 +45,25 @@ fn main() -> Result<()> {
     //let pcld = pointcloud(&xy, &depth, &mask, &intrinsics);
     let pcld = pointcloud(&depth, &mask, &intrinsics);
 
-    write_pcld("out.csv", &pcld)?;
+    let pcld_xy: Vec<[f32; 2]> = xy
+        .data()
+        .chunks_exact(2)
+        .zip(mask.data())
+        .filter(|(_, mask)| **mask)
+        .map(|(xy, _)| [xy[0], xy[1]])
+        .collect();
+
+    write_pcld("out.csv", &pcld, &pcld_xy)?;
 
     Ok(())
 }
 
-fn write_pcld(path: impl AsRef<Path>, pcld: &[[f32; 3]]) -> Result<()> {
+fn write_pcld(path: impl AsRef<Path>, pcld: &[[f32; 3]], xy: &[[f32; 2]]) -> Result<()> {
     let f = std::fs::File::create(path)?;
     let mut f = BufWriter::new(f);
 
-    for &[x, y, z] in pcld {
-        writeln!(f, "{},{},{}", x, y, z)?;
+    for (&[x, y, z], &[u, v]) in pcld.into_iter().zip(xy) {
+        writeln!(f, "{},{},{},{},{},0", x, y, z, u, v)?;
     }
 
     Ok(())
