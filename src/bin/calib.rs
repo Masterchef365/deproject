@@ -1,13 +1,13 @@
 use anyhow::{Context, Ok, Result};
 use deproject::{project::rs2_deproject_pixel_to_point, *};
-use nalgebra::{Matrix2x4, Matrix4, Vector4, Matrix4x2, Point3, Vector2};
+use nalgebra::{Matrix2x4, Matrix4, Matrix4x2, Point3, Vector2, Vector4};
+use rand::prelude::*;
 use realsense_rust::base::Rs2Intrinsics;
 use std::{
     fs::File,
     io::{self, BufWriter, Write},
     path::{Path, PathBuf},
 };
-use rand::prelude::*;
 
 fn main() -> Result<()> {
     let mut args = std::env::args().skip(1);
@@ -22,16 +22,7 @@ fn main() -> Result<()> {
 
     write_color_png("xy.png", &color)?;
 
-    let depth = load_depth_png(path.join(format!(
-            "{}_depth.png",
-            PatternSample {
-                step: 0,
-                orient: false,
-                sign: false,
-                idx: 0
-            }
-            .to_string()
-        )))?;
+    let depth = avg_depth(&path, 100)?;
 
     let mask = mask(&paths, idx, 50.0)?;
     let mask = mask.zip(&depth, |m, d| [m[0] && d[0] != 0]);
@@ -58,9 +49,11 @@ fn main() -> Result<()> {
     let rng = SmallRng::seed_from_u64(0);
 
     let mut output_xyz = pcld.to_vec();
-    let mut output_rg = vec![];//pcld_xy.to_vec();
+    let mut output_rg = vec![]; //pcld_xy.to_vec();
 
     let model = best_model(rng, &pcld, &pcld_xy, 100);
+    
+    println!("{}", model);
 
     for &[x, y, z] in &pcld {
         let xyz = Vector4::new(x, y, z, 1.);
@@ -79,7 +72,66 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn best_model(mut rng: impl Rng, pcld: &[[f32; 3]], xy: &[[f32; 2]], iters: usize) -> Matrix2x4<f32> {
+fn avg_depth(path: &Path, max_iters: usize) -> Result<MinimalImage<u16>> {
+    let mut accum = load_depth_png(path.join(format!(
+            "{}_depth.png",
+            PatternSample {
+                step: 0,
+                orient: false,
+                sign: false,
+                idx: 0
+            }
+            .to_string()
+        )))?
+    .map(|v| [u64::from(v[0])]);
+
+    let mut count = accum.map(|_| [0]);
+
+    let mut n = 0;
+
+    for img in path.read_dir()? {
+        let ent = img?;
+        let path = ent.path();
+        dbg!(&path);
+        if path.to_str().unwrap().ends_with("_depth.png") {
+            let depth = load_depth_png(path)?;
+            accum
+                .data_mut()
+                .iter_mut()
+                .zip(depth.data())
+                .for_each(|(a, d)| *a += u64::from(*d));
+
+            count
+                .data_mut()
+                .iter_mut()
+                .zip(depth.data())
+                .for_each(|(c, d)| *c += u64::from(*d != 0));
+
+            n += 1;
+        }
+
+        if n == max_iters as u64 {
+            break;
+        }
+    }
+
+    let avg = accum.zip(&count, |a, c| {
+        if c[0] == 0 {
+            [0]
+        } else {
+            [(a[0] / c[0]) as u16]
+        }
+    });
+
+    Ok(avg)
+}
+
+fn best_model(
+    mut rng: impl Rng,
+    pcld: &[[f32; 3]],
+    xy: &[[f32; 2]],
+    iters: usize,
+) -> Matrix2x4<f32> {
     let mut best_mse = f32::INFINITY;
     let mut best_model = Matrix2x4::zeros();
 
@@ -88,6 +140,7 @@ fn best_model(mut rng: impl Rng, pcld: &[[f32; 3]], xy: &[[f32; 2]], iters: usiz
         let mse = model_mse(model, &pcld, xy);
 
         if mse < best_mse {
+            dbg!(mse);
             best_mse = mse;
             best_model = model;
         }
@@ -117,7 +170,7 @@ fn model_origin(model: Matrix2x4<f32>) -> Point3<f32> {
     let mut p = Point3::origin();
 
     for i in 0..3 {
-        p[i] = -model[i*2+1] / model[3*2+1];
+        p[i] = -model[i * 2 + 1] / model[3 * 2 + 1];
     }
 
     p
@@ -134,10 +187,10 @@ fn create_model(mut rng: impl Rng, pcld: &[[f32; 3]], xy: &[[f32; 2]]) -> Option
         let [proj_u, proj_v] = xy[j];
 
         for k in 0..3 {
-            x[i+k*4] = point[k];
+            x[i + k * 4] = point[k];
         }
 
-        x[i+3*4] = 1.;
+        x[i + 3 * 4] = 1.;
         u[i] = proj_u;
         v[i] = proj_v;
     }
