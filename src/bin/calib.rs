@@ -1,11 +1,13 @@
 use anyhow::{Context, Ok, Result};
 use deproject::{project::rs2_deproject_pixel_to_point, *};
+use nalgebra::{Matrix2x4, Matrix4, Vector4, Matrix4x2, Point3, Vector2};
 use realsense_rust::base::Rs2Intrinsics;
 use std::{
     fs::File,
     io::{self, BufWriter, Write},
     path::{Path, PathBuf},
 };
+use rand::prelude::*;
 
 fn main() -> Result<()> {
     let mut args = std::env::args().skip(1);
@@ -43,9 +45,9 @@ fn main() -> Result<()> {
     let intrinsics: Rs2Intrinsics = Rs2Intrinsics(intrinsics.into());
 
     //let pcld = pointcloud(&xy, &depth, &mask, &intrinsics);
-    let pcld = pointcloud(&depth, &mask, &intrinsics);
+    let mut pcld = pointcloud(&depth, &mask, &intrinsics);
 
-    let pcld_xy: Vec<[f32; 2]> = xy
+    let mut pcld_xy: Vec<[f32; 2]> = xy
         .data()
         .chunks_exact(2)
         .zip(mask.data())
@@ -53,9 +55,83 @@ fn main() -> Result<()> {
         .map(|(xy, _)| [xy[0], xy[1]])
         .collect();
 
-    write_pcld("out.csv", &pcld, &pcld_xy)?;
+    let mut rng = SmallRng::seed_from_u64(0);
+
+    let mut output_xyz = pcld.to_vec();
+    let mut output_rg = pcld_xy.to_vec();
+
+    for i in 0..1_000 {
+        let model = create_model(&mut rng, &pcld, &pcld_xy).unwrap();
+        let origin = model_origin(model);
+
+        let mse = model_mse(model, &pcld, &pcld_xy);
+
+        dbg!(mse);
+
+        output_xyz.push(*origin.coords.as_ref());
+        output_rg.push([mse * 10., 1.]);
+    }
+
+    write_pcld("out.csv", &output_xyz, &output_rg)?;
+
+    //println!("{}", origin);
 
     Ok(())
+}
+
+fn best_model(pcld: &[[f32; 3]], xy: &[[f32; 2]], iters: usize) -> Matrix2x4<f32> {
+    todo!()
+}
+
+fn model_mse(model: Matrix2x4<f32>, pcld: &[[f32; 3]], xy: &[[f32; 2]]) -> f32 {
+    let mut mse = 0.;
+    for (&[x, y, z], &[u, v]) in pcld.iter().zip(xy) {
+        let uv = Vector2::new(u, v);
+        let uv_pred = model * Vector4::new(x, y, z, 1.);
+
+        mse += (uv - uv_pred).norm_squared();
+    }
+
+    mse /= pcld.len() as f32;
+
+    mse
+}
+
+fn model_origin(model: Matrix2x4<f32>) -> Point3<f32> {
+    let mut p = Point3::origin();
+
+    for i in 0..3 {
+        p[i] = -model[i*2+1] / model[3*2+1];
+    }
+
+    p
+}
+
+fn create_model(mut rng: impl Rng, pcld: &[[f32; 3]], xy: &[[f32; 2]]) -> Option<Matrix2x4<f32>> {
+    let mut x: Matrix4<f32> = Matrix4::zeros();
+    let mut u: Vector4<f32> = Vector4::zeros();
+    let mut v: Vector4<f32> = Vector4::zeros();
+
+    for i in 0..4 {
+        let j = rng.gen_range(0..pcld.len());
+        let point = pcld[j];
+        let [proj_u, proj_v] = xy[j];
+
+        for k in 0..3 {
+            x[i+k*4] = point[k];
+        }
+
+        x[i+3*4] = 1.;
+        u[i] = proj_u;
+        v[i] = proj_v;
+    }
+
+    let a_u = (x.transpose() * x).try_inverse()? * x.transpose() * u;
+    let a_v = (x.transpose() * x).try_inverse()? * x.transpose() * v;
+
+    let model = Matrix4x2::from_columns(&[a_u, a_v]).transpose();
+
+    Some(model)
 }
 
 fn write_pcld(path: impl AsRef<Path>, pcld: &[[f32; 3]], xy: &[[f32; 2]]) -> Result<()> {
