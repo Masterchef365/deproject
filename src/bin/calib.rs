@@ -1,6 +1,6 @@
 use anyhow::{Context, Ok, Result};
 use deproject::{project::rs2_deproject_pixel_to_point, *};
-use nalgebra::{Matrix2x4, Matrix4, Matrix4x2, Point3, Vector2, Vector4};
+use nalgebra::{Matrix2x4, Matrix4, Matrix4x2, Point3, Vector2, Vector4, DMatrix, DVector};
 use rand::prelude::*;
 use realsense_rust::base::Rs2Intrinsics;
 use std::{
@@ -51,7 +51,11 @@ fn main() -> Result<()> {
     let mut output_xyz = pcld.to_vec();
     let mut output_rg = vec![]; //pcld_xy.to_vec();
 
-    let model = best_model(rng, &pcld, &pcld_xy, 100);
+    //let model = best_model(rng, &pcld, &pcld_xy, 100);
+    let model = create_model(&pcld, &pcld_xy).unwrap();
+
+    let mse = model_mse(model, &pcld, &pcld_xy);
+    dbg!(mse);
     
     println!("{}", model);
 
@@ -126,6 +130,7 @@ fn avg_depth(path: &Path, max_iters: usize) -> Result<MinimalImage<u16>> {
     Ok(avg)
 }
 
+/*
 fn best_model(
     mut rng: impl Rng,
     pcld: &[[f32; 3]],
@@ -151,6 +156,7 @@ fn best_model(
 
     best_model
 }
+*/
 
 fn model_mse(model: Matrix2x4<f32>, pcld: &[[f32; 3]], xy: &[[f32; 2]]) -> f32 {
     let mut mse = 0.;
@@ -176,31 +182,19 @@ fn model_origin(model: Matrix2x4<f32>) -> Point3<f32> {
     p
 }
 
-fn create_model(mut rng: impl Rng, pcld: &[[f32; 3]], xy: &[[f32; 2]]) -> Option<Matrix2x4<f32>> {
-    let mut x: Matrix4<f32> = Matrix4::zeros();
-    let mut u: Vector4<f32> = Vector4::zeros();
-    let mut v: Vector4<f32> = Vector4::zeros();
+fn create_model(pcld: &[[f32; 3]], xy: &[[f32; 2]]) -> Option<Matrix2x4<f32>> {
+    let x = pcld.iter().map(|v| [v[0], v[1], v[2], 1.]).flatten().collect::<Vec<f32>>();
+    let x: DMatrix<f32> = DMatrix::from_row_slice(pcld.len(), 4, &x);
 
-    for i in 0..4 {
-        let j = rng.gen_range(0..pcld.len());
-        let point = pcld[j];
-        let [proj_u, proj_v] = xy[j];
+    let u: DVector<f32> = DVector::from_column_slice(&xy.iter().map(|u| u[0]).collect::<Vec<f32>>());
+    let v: DVector<f32> = DVector::from_column_slice(&xy.iter().map(|u| u[1]).collect::<Vec<f32>>());
 
-        for k in 0..3 {
-            x[i + k * 4] = point[k];
-        }
+    let a_u = (x.transpose() * &x).try_inverse()? * x.transpose() * u;
+    let a_v = (x.transpose() * &x).try_inverse()? * x.transpose() * v;
 
-        x[i + 3 * 4] = 1.;
-        u[i] = proj_u;
-        v[i] = proj_v;
-    }
+    let model = DMatrix::from_columns(&[a_u, a_v]).transpose();
 
-    let a_u = (x.transpose() * x).try_inverse()? * x.transpose() * u;
-    let a_v = (x.transpose() * x).try_inverse()? * x.transpose() * v;
-
-    let model = Matrix4x2::from_columns(&[a_u, a_v]).transpose();
-
-    Some(model)
+    Some(Matrix2x4::from_iterator(model.iter().copied()))
 }
 
 fn write_pcld(path: impl AsRef<Path>, pcld: &[[f32; 3]], xy: &[[f32; 2]]) -> Result<()> {
