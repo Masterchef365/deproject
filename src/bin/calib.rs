@@ -1,6 +1,6 @@
 use anyhow::{Context, Ok, Result};
 use deproject::{project::rs2_deproject_pixel_to_point, *};
-use nalgebra::{Matrix2x4, Matrix4, Matrix4x2, Point3, Vector2, Vector4, DMatrix, DVector};
+use nalgebra::{DMatrix, DVector, Matrix2x4, Matrix4, Matrix4x2, Point3, Vector2, Vector4};
 use rand::prelude::*;
 use realsense_rust::base::Rs2Intrinsics;
 use std::{
@@ -56,7 +56,7 @@ fn main() -> Result<()> {
 
     let mse = model_mse(model, &pcld, &pcld_xy);
     dbg!(mse);
-    
+
     println!("{}", model);
 
     for &[x, y, z] in &pcld {
@@ -183,18 +183,23 @@ fn model_origin(model: Matrix2x4<f32>) -> Point3<f32> {
 }
 
 fn create_model(pcld: &[[f32; 3]], xy: &[[f32; 2]]) -> Option<Matrix2x4<f32>> {
-    let x = pcld.iter().map(|v| [v[0], v[1], v[2], 1.]).flatten().collect::<Vec<f32>>();
+    let x = pcld
+        .iter()
+        .map(|v| [v[0], v[1], v[2], 1.])
+        .flatten()
+        .collect::<Vec<f32>>();
+
     let x: DMatrix<f32> = DMatrix::from_row_slice(pcld.len(), 4, &x);
 
-    let u: DVector<f32> = DVector::from_column_slice(&xy.iter().map(|u| u[0]).collect::<Vec<f32>>());
-    let v: DVector<f32> = DVector::from_column_slice(&xy.iter().map(|u| u[1]).collect::<Vec<f32>>());
+    let u: DMatrix<f32> = DMatrix::from_row_slice(
+        pcld.len(),
+        2,
+        &xy.iter().copied().flatten().collect::<Vec<f32>>(),
+    );
 
-    let a_u = (x.transpose() * &x).try_inverse()? * x.transpose() * u;
-    let a_v = (x.transpose() * &x).try_inverse()? * x.transpose() * v;
+    let a = (x.transpose() * &x).try_inverse()? * x.transpose() * u;
 
-    let model = DMatrix::from_columns(&[a_u, a_v]).transpose();
-
-    Some(Matrix2x4::from_iterator(model.iter().copied()))
+    Some(Matrix2x4::from_iterator(a.transpose().iter().copied()))
 }
 
 fn write_pcld(path: impl AsRef<Path>, pcld: &[[f32; 3]], xy: &[[f32; 2]]) -> Result<()> {
