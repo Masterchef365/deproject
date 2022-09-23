@@ -12,6 +12,11 @@ use std::{
 fn main() -> Result<()> {
     let mut args = std::env::args().skip(1);
     let path = PathBuf::from(args.next().context("Missing path arg")?);
+    let thresh: f32 = args
+        .next()
+        .unwrap_or("0.5".to_string())
+        .parse::<f32>()
+        .context("Threshold must be float")?;
 
     let paths = Paths::from_root(&path)?;
 
@@ -24,7 +29,7 @@ fn main() -> Result<()> {
 
     let depth = avg_depth(&path, 100)?;
 
-    let mask = mask(&paths, idx, 50.0)?;
+    let mask = mask(&paths, idx, thresh * 256.)?;
     let mask = mask.zip(&depth, |m, d| [m[0] && d[0] != 0]);
 
     let mask_color = mask.map(|v| [if v[0] { u8::MAX } else { 0 }; 3]);
