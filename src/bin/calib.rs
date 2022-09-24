@@ -224,7 +224,7 @@ fn create_model(pcld: &[[f32; 3]], uv: &[[f32; 2]]) -> Option<Model> {
                 }
             }
 
-            let xp = uv[i] / 1.;
+            let xp = -uv[i] / 1.;
             data.extend_from_slice(&pt_xyz.map(|v| v * xp));
             data.push(1. * xp);
         }
