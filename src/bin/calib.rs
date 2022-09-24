@@ -9,6 +9,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+type Model = Matrix2x4<f32>;
+
 fn main() -> Result<()> {
     let mut args = std::env::args().skip(1);
     let path = PathBuf::from(args.next().context("Missing path arg")?);
@@ -141,7 +143,7 @@ fn best_model(
     pcld: &[[f32; 3]],
     xy: &[[f32; 2]],
     iters: usize,
-) -> Matrix2x4<f32> {
+) -> Model {
     let mut best_mse = f32::INFINITY;
     let mut best_model = Matrix2x4::zeros();
 
@@ -163,7 +165,7 @@ fn best_model(
 }
 */
 
-fn model_mse(model: Matrix2x4<f32>, pcld: &[[f32; 3]], xy: &[[f32; 2]]) -> f32 {
+fn model_mse(model: Model, pcld: &[[f32; 3]], xy: &[[f32; 2]]) -> f32 {
     let mut mse = 0.;
     for (&[x, y, z], &[u, v]) in pcld.iter().zip(xy) {
         let uv = Vector2::new(u, v);
@@ -177,7 +179,7 @@ fn model_mse(model: Matrix2x4<f32>, pcld: &[[f32; 3]], xy: &[[f32; 2]]) -> f32 {
     mse
 }
 
-fn model_origin(model: Matrix2x4<f32>) -> Point3<f32> {
+fn model_origin(model: Model) -> Point3<f32> {
     let mut p = Point3::origin();
 
     for i in 0..3 {
@@ -187,7 +189,7 @@ fn model_origin(model: Matrix2x4<f32>) -> Point3<f32> {
     p
 }
 
-fn create_model(pcld: &[[f32; 3]], xy: &[[f32; 2]]) -> Option<Matrix2x4<f32>> {
+fn create_model(pcld: &[[f32; 3]], xy: &[[f32; 2]]) -> Option<Model> {
     let x = pcld
         .iter()
         .map(|v| [v[0], v[1], v[2], 1.])
