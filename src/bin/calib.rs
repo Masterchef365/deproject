@@ -1,6 +1,8 @@
 use anyhow::{Context, Ok, Result};
 use deproject::{project::rs2_deproject_pixel_to_point, *};
-use nalgebra::{DMatrix, DVector, Matrix2x4, Matrix4, Matrix4x2, Point3, Vector2, Vector4};
+use nalgebra::{
+    DMatrix, DVector, Matrix2x4, Matrix4, Matrix4x2, OMatrix, Point3, Vector2, Vector4, SVD,
+};
 use rand::prelude::*;
 use realsense_rust::base::Rs2Intrinsics;
 use std::{
@@ -189,7 +191,8 @@ fn model_origin(model: Model) -> Point3<f32> {
     p
 }
 
-fn create_model(pcld: &[[f32; 3]], xy: &[[f32; 2]]) -> Option<Model> {
+fn create_model(pcld: &[[f32; 3]], uv: &[[f32; 2]]) -> Option<Model> {
+    /*
     let x = pcld
         .iter()
         .map(|v| [v[0], v[1], v[2], 1.])
@@ -204,9 +207,45 @@ fn create_model(pcld: &[[f32; 3]], xy: &[[f32; 2]]) -> Option<Model> {
         &xy.iter().copied().flatten().collect::<Vec<f32>>(),
     );
 
-    let a = (x.transpose() * &x).try_inverse()? * x.transpose() * u;
+    let x =
+    */
 
-    Some(Matrix2x4::from_iterator(a.transpose().iter().copied()))
+    // Column-major data
+    let mut data = vec![];
+
+    for (pt_xyz, uv) in pcld.iter().zip(uv) {
+        for i in 0..2 {
+            for k in 0..2 {
+                if i == k {
+                    data.extend_from_slice(pt_xyz);
+                    data.push(1.);
+                } else {
+                    data.extend_from_slice(&[0.; 4]);
+                }
+            }
+
+            let xp = uv[i] / 1.;
+            data.extend_from_slice(&pt_xyz.map(|v| v * xp));
+            data.push(1. * xp);
+        }
+    }
+
+    dbg!(data.len());
+    dbg!(pcld.len());
+
+    let x = DMatrix::from_row_slice(pcld.len() * 2, 4 * 3, &data);
+
+    let svd = SVD::new(x, false, true);
+    let v = svd.v_t.unwrap();
+    let vector = v.column(4*3-1);
+
+    println!("{}", svd.singular_values);
+
+    println!("{}", vector);
+
+    let matrix = Model::from_iterator(vector.iter().copied());
+
+    Some(matrix)
 }
 
 fn write_pcld(path: impl AsRef<Path>, pcld: &[[f32; 3]], xy: &[[f32; 2]]) -> Result<()> {
