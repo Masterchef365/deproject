@@ -1,6 +1,6 @@
 use anyhow::{Context, Ok, Result};
 use deproject::{project::rs2_deproject_pixel_to_point, *};
-use nalgebra::{DMatrix, DVector, Matrix2x4, Matrix4, Matrix4x2, Point3, Vector2, Vector4};
+use nalgebra::{DMatrix, DVector, Matrix2x4, Matrix4, Matrix4x2, Point3, Vector2, Vector4, Matrix3x4, Vector3};
 use rand::prelude::*;
 use realsense_rust::base::Rs2Intrinsics;
 use std::{
@@ -141,7 +141,7 @@ fn best_model(
     pcld: &[[f32; 3]],
     xy: &[[f32; 2]],
     iters: usize,
-) -> Matrix2x4<f32> {
+) -> Model {
     let mut best_mse = f32::INFINITY;
     let mut best_model = Matrix2x4::zeros();
 
@@ -163,13 +163,21 @@ fn best_model(
 }
 */
 
-fn model_mse(model: Matrix2x4<f32>, pcld: &[[f32; 3]], xy: &[[f32; 2]]) -> f32 {
+type Model = Matrix3x4<f32>;
+
+fn f_model(p: Vector3<f32>, model: &Model) -> Vector3<f32> {
+    let homo = p.insert_row(3, 1.);
+    let uw = model * homo;
+    uw / uw.z
+}
+
+fn model_mse(model: Model, pcld: &[[f32; 3]], xy: &[[f32; 2]]) -> f32 {
     let mut mse = 0.;
     for (&[x, y, z], &[u, v]) in pcld.iter().zip(xy) {
         let uv = Vector2::new(u, v);
         let uv_pred = model * Vector4::new(x, y, z, 1.);
 
-        mse += (uv - uv_pred).norm_squared();
+        mse += (uv - uv_pred.xy()).norm_squared();
     }
 
     mse /= pcld.len() as f32;
@@ -177,7 +185,7 @@ fn model_mse(model: Matrix2x4<f32>, pcld: &[[f32; 3]], xy: &[[f32; 2]]) -> f32 {
     mse
 }
 
-fn model_origin(model: Matrix2x4<f32>) -> Point3<f32> {
+fn model_origin(model: Model) -> Point3<f32> {
     let mut p = Point3::origin();
 
     for i in 0..3 {
@@ -187,24 +195,41 @@ fn model_origin(model: Matrix2x4<f32>) -> Point3<f32> {
     p
 }
 
-fn create_model(pcld: &[[f32; 3]], xy: &[[f32; 2]]) -> Option<Matrix2x4<f32>> {
+fn create_model(pcld: &[[f32; 3]], xy: &[[f32; 2]]) -> Option<Model> {
     let x = pcld
         .iter()
         .map(|v| [v[0], v[1], v[2], 1.])
         .flatten()
         .collect::<Vec<f32>>();
-
     let x: DMatrix<f32> = DMatrix::from_row_slice(pcld.len(), 4, &x);
 
-    let u: DMatrix<f32> = DMatrix::from_row_slice(
-        pcld.len(),
-        2,
-        &xy.iter().copied().flatten().collect::<Vec<f32>>(),
-    );
+    let one = xy.iter().map(|_| [1.]).flatten().collect::<Vec<f32>>();
+    let one: DMatrix<f32> = DMatrix::from_row_slice(xy.len(), 1, &one);
 
-    let a = (x.transpose() * &x).try_inverse()? * x.transpose() * u;
+    let a_one = (x.transpose() * &x).try_inverse()? * x.transpose() * one;
 
-    Some(Matrix2x4::from_iterator(a.transpose().iter().copied()))
+    let w = &x * &a_one;
+
+    let uw = xy
+        .iter()
+        .zip(w.iter())
+        .map(|(v, w)| [v[0] * w, v[1] * w])
+        .flatten()
+        .collect::<Vec<f32>>();
+
+    dbg!(uw.len());
+
+    let uw: DMatrix<f32> = DMatrix::from_row_slice(xy.len(), 2, &uw);
+
+    let a_uw = (x.transpose() * &x).try_inverse()? * x.transpose() * uw;
+
+    let mut a = a_uw.insert_column(2, 0.);
+    //println!("{}", a);
+    a.column_mut(2).copy_from(&a_one);
+
+    println!("A: {}", a);
+
+    Some(Matrix3x4::from_iterator(a.transpose().iter().copied()))
 }
 
 fn write_pcld(path: impl AsRef<Path>, pcld: &[[f32; 3]], xy: &[[f32; 2]]) -> Result<()> {
