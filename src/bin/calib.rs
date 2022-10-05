@@ -64,9 +64,9 @@ fn main() -> Result<()> {
 
     println!("{}", model);
 
-    for &[x, y, z] in &pcld {
-        let xyz = Vector4::new(x, y, z, 1.);
-        let uv = model * xyz;
+    for &x in &pcld {
+        let uv = f_model(Vector3::from(x), model);
+        //println!("{}", uv);
         if uv.x >= 0. && uv.x <= 1. && uv.y >= 0. && uv.y <= 1. {
             output_rg.push([uv.x, uv.y]);
         } else {
@@ -165,7 +165,7 @@ fn best_model(
 
 type Model = Matrix3x4<f32>;
 
-fn f_model(p: Vector3<f32>, model: &Model) -> Vector3<f32> {
+fn f_model(p: Vector3<f32>, model: Model) -> Vector3<f32> {
     let homo = p.insert_row(3, 1.);
     let uw = model * homo;
     uw / uw.z
@@ -175,7 +175,7 @@ fn model_mse(model: Model, pcld: &[[f32; 3]], xy: &[[f32; 2]]) -> f32 {
     let mut mse = 0.;
     for (&[x, y, z], &[u, v]) in pcld.iter().zip(xy) {
         let uv = Vector2::new(u, v);
-        let uv_pred = model * Vector4::new(x, y, z, 1.);
+        let uv_pred = f_model(Vector3::new(x, y, z), model);
 
         mse += (uv - uv_pred.xy()).norm_squared();
     }
@@ -185,6 +185,7 @@ fn model_mse(model: Model, pcld: &[[f32; 3]], xy: &[[f32; 2]]) -> f32 {
     mse
 }
 
+/*
 fn model_origin(model: Model) -> Point3<f32> {
     let mut p = Point3::origin();
 
@@ -194,6 +195,7 @@ fn model_origin(model: Model) -> Point3<f32> {
 
     p
 }
+*/
 
 fn create_model(pcld: &[[f32; 3]], xy: &[[f32; 2]]) -> Option<Model> {
     let x = pcld
