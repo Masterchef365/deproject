@@ -1,7 +1,7 @@
 use anyhow::{Context, Ok, Result};
 use deproject::{project::rs2_deproject_pixel_to_point, *};
 use nalgebra::{
-    DMatrix, DVector, Matrix2x4, Matrix4, Matrix4x2, OMatrix, Point3, Vector2, Vector4, SVD,
+    DMatrix, DVector, Matrix2x4, Matrix4, Matrix4x2, OMatrix, Point3, Vector2, Vector4, SVD, Vector3,
 };
 use rand::prelude::*;
 use realsense_rust::base::Rs2Intrinsics;
@@ -10,8 +10,6 @@ use std::{
     io::{self, BufWriter, Write},
     path::{Path, PathBuf},
 };
-
-type Model = Matrix2x4<f32>;
 
 fn main() -> Result<()> {
     let mut args = std::env::args().skip(1);
@@ -63,14 +61,13 @@ fn main() -> Result<()> {
     //let model = best_model(rng, &pcld, &pcld_xy, 100);
     let model = create_model(&pcld, &pcld_xy).unwrap();
 
-    let mse = model_mse(model, &pcld, &pcld_xy);
+    let mse = model_mse(&model, &pcld, &pcld_xy);
     dbg!(mse);
 
-    println!("{}", model);
-
     for &[x, y, z] in &pcld {
-        let xyz = Vector4::new(x, y, z, 1.);
-        let uv = model * xyz;
+        let xyz = Vector3::new(x, y, z);
+        let uv = f_model(&model, xyz);
+        //println!("{}", uv);
         if uv.x >= 0. && uv.x <= 1. && uv.y >= 0. && uv.y <= 1. {
             output_rg.push([uv.x, uv.y]);
         } else {
@@ -167,11 +164,11 @@ fn best_model(
 }
 */
 
-fn model_mse(model: Model, pcld: &[[f32; 3]], xy: &[[f32; 2]]) -> f32 {
+fn model_mse(model: &Model, pcld: &[[f32; 3]], xy: &[[f32; 2]]) -> f32 {
     let mut mse = 0.;
     for (&[x, y, z], &[u, v]) in pcld.iter().zip(xy) {
         let uv = Vector2::new(u, v);
-        let uv_pred = model * Vector4::new(x, y, z, 1.);
+        let uv_pred = f_model(&model, Vector3::new(x, y, z));
 
         mse += (uv - uv_pred).norm_squared();
     }
@@ -181,71 +178,50 @@ fn model_mse(model: Model, pcld: &[[f32; 3]], xy: &[[f32; 2]]) -> f32 {
     mse
 }
 
-fn model_origin(model: Model) -> Point3<f32> {
-    let mut p = Point3::origin();
+type Model = [DVector<f32>; 2];
 
-    for i in 0..3 {
-        p[i] = -model[i * 2 + 1] / model[3 * 2 + 1];
+fn f_model(model: &Model, pt: Vector3<f32>) -> Vector2<f32> {
+    let homo = pt.insert_row(3, 1.);
+    let mut xy = [0.; 2];
+
+    for i in 0..2 {
+        let a = model[i].transpose().columns(0, 4) * homo;
+        let b = model[i].transpose().columns(4, 4) * homo;
+
+        xy[i] = a.as_ref()[0] / b.as_ref()[0];
     }
 
-    p
+    Vector2::from(xy)
 }
 
 fn create_model(pcld: &[[f32; 3]], uv: &[[f32; 2]]) -> Option<Model> {
-    /*
-    let x = pcld
-        .iter()
-        .map(|v| [v[0], v[1], v[2], 1.])
-        .flatten()
-        .collect::<Vec<f32>>();
+    let mut vectors = [DVector::zeros(0), DVector::zeros(0)];
 
-    let x: DMatrix<f32> = DMatrix::from_row_slice(pcld.len(), 4, &x);
-
-    let u: DMatrix<f32> = DMatrix::from_row_slice(
-        pcld.len(),
-        2,
-        &xy.iter().copied().flatten().collect::<Vec<f32>>(),
-    );
-
-    let x =
-    */
-
-    // Column-major data
-    let mut data = vec![];
-
-    for (pt_xyz, uv) in pcld.iter().zip(uv) {
-        for i in 0..2 {
-            for k in 0..2 {
-                if i == k {
-                    data.extend_from_slice(pt_xyz);
-                    data.push(1.);
-                } else {
-                    data.extend_from_slice(&[0.; 4]);
-                }
-            }
-
-            let xp = -uv[i] / 1.;
-            data.extend_from_slice(&pt_xyz.map(|v| v * xp));
-            data.push(1. * xp);
+    for uvi in 0..2 {
+        // Column-major data
+        let mut data = vec![];
+        for (xyz, uv) in pcld.iter().zip(uv) {
+            let u = uv[uvi];
+            let [x, y, z] = *xyz;
+            // Homogenous coords
+            data.extend_from_slice(&[x, y, z, 1., -u*x, -u*y, -u*z, -u]);
         }
+
+        let x = DMatrix::from_column_slice(8, pcld.len(), &data);
+
+        // SVD in search of null space
+        let svd = SVD::new(x.clone(), false, true);
+        let v = svd.v_t.unwrap();
+        let vector = v.column(v.ncols()-1);
+
+        println!("{}", svd.singular_values);
+
+        println!("{}", vector);
+
+        vectors[uvi] = vector.into_owned();
     }
 
-    dbg!(data.len());
-    dbg!(pcld.len());
-
-    let x = DMatrix::from_row_slice(pcld.len() * 2, 4 * 3, &data);
-
-    let svd = SVD::new(x, false, true);
-    let v = svd.v_t.unwrap();
-    let vector = v.column(4*3-1);
-
-    println!("{}", svd.singular_values);
-
-    println!("{}", vector);
-
-    let matrix = Model::from_iterator(vector.iter().copied());
-
-    Some(matrix)
+    Some(vectors)
 }
 
 fn write_pcld(path: impl AsRef<Path>, pcld: &[[f32; 3]], xy: &[[f32; 2]]) -> Result<()> {
