@@ -60,9 +60,9 @@ fn main() -> Result<()> {
     let model = create_model(&pcld, &pcld_xy).unwrap();
 
     let mse = model_mse(model, &pcld, &pcld_xy);
-    dbg!(mse);
 
     println!("{}", model);
+    println!("MSE: {}", mse);
 
     for &x in &pcld {
         let uv = f_model(Vector3::from(x), model);
@@ -101,7 +101,6 @@ fn avg_depth(path: &Path, max_iters: usize) -> Result<MinimalImage<u16>> {
     for img in path.read_dir()? {
         let ent = img?;
         let path = ent.path();
-        dbg!(&path);
         if path.to_str().unwrap().ends_with("_depth.png") {
             let depth = load_depth_png(path)?;
             accum
@@ -219,8 +218,6 @@ fn create_model(pcld: &[[f32; 3]], xy: &[[f32; 2]]) -> Option<Model> {
         .flatten()
         .collect::<Vec<f32>>();
 
-    dbg!(uw.len());
-
     let uw: DMatrix<f32> = DMatrix::from_row_slice(xy.len(), 2, &uw);
 
     let a_uw = (x.transpose() * &x).try_inverse()? * x.transpose() * uw;
@@ -228,8 +225,6 @@ fn create_model(pcld: &[[f32; 3]], xy: &[[f32; 2]]) -> Option<Model> {
     let mut a = a_uw.insert_column(2, 0.);
     //println!("{}", a);
     a.column_mut(2).copy_from(&a_one);
-
-    println!("A: {}", a);
 
     Some(Matrix3x4::from_iterator(a.transpose().iter().copied()))
 }
