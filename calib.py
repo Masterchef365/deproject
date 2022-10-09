@@ -16,18 +16,31 @@ xyz1_u[:, 4:] *= uv[:, (0, 0, 0, 0)]
 xyz1_v = xyz1.copy()
 xyz1_v[:, 4:] *= uv[:, (1, 1, 1, 1)]
 
+
 # Solve for null space
 # https://scicomp.stackexchange.com/a/2511
-q, r = np.linalg.qr(xyz1_u.T)
+def nullspace(a):
+    q, r = np.linalg.qr(a.T)
 
-eps = 1e-1
-r = len(list(filter(lambda x: abs(x) > eps, list(np.diag(r)))))
+    eps = 1e-1  # Tolerance
+    r = len(list(filter(lambda x: abs(x) > eps, list(np.diag(r)))))
 
-soln = q[:, len(q)-r]
-print("soln: ", soln)
+    soln = q[:, len(q)-r]
 
-res = np.dot(xyz1, soln)
-print("res: ", res)
+    return soln
+    print("soln: ", soln)
 
-mse = np.dot(res.T, res) / len(xyz)
-print("MSE: ", mse)
+
+def accuracy(soln, x):
+    res = np.dot(x, soln)
+    #print("res: ", res)
+
+    mse = np.dot(res.T, res) / len(x)
+    print("MSE: ", mse)
+
+
+soln_u = nullspace(xyz1_u)
+soln_v = nullspace(xyz1_v)
+
+accuracy(soln_u, xyz1_u)
+accuracy(soln_v, xyz1_v)
