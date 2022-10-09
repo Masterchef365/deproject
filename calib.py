@@ -13,6 +13,7 @@ xyz1 = np.ones((len(xyz), 4))
 xyz1[:, 0:3] = xyz
 
 # Initialize random weights
+np.random.seed(1)
 abc = np.random.rand(8) * 2. - 1.
 
 
