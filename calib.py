@@ -14,7 +14,7 @@ xyz1 = np.ones((len(xyz), 4))
 xyz1[:, 0:3] = xyz
 
 # Initialize random weights
-np.random.seed(1)
+np.random.seed(4)
 abc = np.random.rand(8) * 2. - 1.
 
 # Calculate model accuracy
@@ -34,24 +34,25 @@ def grad(abc, u):
 
     grad = np.zeros((len(u), 8))
 
-    mp = m / np.abs(p)
-    mp = mp[:, np.newaxis]
-    mp = mp[:, (0, 0, 0, 0)]
+    mp = np.abs(m / p - u)
+    j = m - u * p
 
-    grad[:, :4] = xyz1
-    grad[:, 4:] = xyz1 * mp
+    a = j / (p**2 * mp)
+    b = -(j * m) / (p**3 * mp)
 
-    s = np.sign(m - u * p)
-    sp = s / np.abs(p)
-    sp = sp[:, np.newaxis]
-    sp = sp[:, tuple([0]*8)]
+    a = a[:, np.newaxis]
+    a = a[:, (0, 0, 0, 0)]
 
-    grad *= sp
+    b = b[:, np.newaxis]
+    b = b[:, (0, 0, 0, 0)]
+
+    grad[:, :4] = xyz1 * a
+    grad[:, 4:] = xyz1 * b
 
     return np.average(grad, axis=0)
 
 
-lr = 1e-2
+lr = 1e-5
 gamma = 0.9
 
 iters = 100000000000
@@ -62,7 +63,7 @@ for i in range(iters):
     v = gamma * v + lr * grad(abc - gamma * v, u)
     abc -= v
 
-    if i % 10 == 0:
+    if i % 1 == 0:
         rmse = np.sqrt(calc_mse(abc, u))
         print(rmse, list(abc))
         sys.stdout.flush()
