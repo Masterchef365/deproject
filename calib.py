@@ -51,8 +51,14 @@ def grad(abc, u):
     return np.average(grad, axis=0)
 
 
-lr = 1e-4
+lr = 1e-3
+gamma = 0.9
+
 iters = 100000000000
+
+v = np.zeros_like(grad(abc, u))
+
 for _ in range(iters):
-    abc -= grad(abc, u) * lr
-    print(calc_mse(abc, u))
+    v = gamma * v + lr * grad(abc, u)
+    abc -= v
+    print(np.sqrt(calc_mse(abc, u)))
