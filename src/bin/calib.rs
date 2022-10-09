@@ -64,6 +64,7 @@ fn main() -> Result<()> {
     let mse = model_mse(&model, &pcld, &pcld_xy);
     dbg!(mse);
 
+    /*
     for &[x, y, z] in &pcld {
         let xyz = Vector3::new(x, y, z);
         let uv = f_model(&model, xyz);
@@ -74,6 +75,12 @@ fn main() -> Result<()> {
             output_rg.push([0.1, 0.1]);
         }
     }
+    */
+
+    for (&[x, y, z], &[u, v]) in pcld.iter().zip(&pcld_xy) {
+        output_rg.push([u, v]);
+    }
+
 
     write_pcld("out.csv", &output_xyz, &output_rg)?;
 
@@ -229,7 +236,7 @@ fn write_pcld(path: impl AsRef<Path>, pcld: &[[f32; 3]], xy: &[[f32; 2]]) -> Res
     let mut f = BufWriter::new(f);
 
     for (&[x, y, z], &[u, v]) in pcld.into_iter().zip(xy) {
-        writeln!(f, "{},{},{},{},{},0", x, y, z, u, v)?;
+        writeln!(f, "{},{},{},{},{}", x, y, z, u, v)?;
     }
 
     Ok(())
