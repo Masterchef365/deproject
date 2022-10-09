@@ -1,7 +1,7 @@
 import numpy as np
 
 # Load file
-f = np.loadtxt("out.csv", delimiter=',')
+f = np.loadtxt("data.csv", delimiter=',')
 xyz = f[:, :3]
 uv = f[:, 3:]
 
