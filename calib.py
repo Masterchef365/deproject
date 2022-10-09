@@ -1,4 +1,5 @@
 import numpy as np
+import sys
 
 # Load file
 f = np.loadtxt("data.csv", delimiter=',')
@@ -15,7 +16,6 @@ xyz1[:, 0:3] = xyz
 # Initialize random weights
 np.random.seed(1)
 abc = np.random.rand(8) * 2. - 1.
-
 
 # Calculate model accuracy
 def deproject(abc):
@@ -51,14 +51,18 @@ def grad(abc, u):
     return np.average(grad, axis=0)
 
 
-lr = 1e-3
+lr = 1e-2
 gamma = 0.9
 
 iters = 100000000000
 
 v = np.zeros_like(grad(abc, u))
 
-for _ in range(iters):
-    v = gamma * v + lr * grad(abc, u)
+for i in range(iters):
+    v = gamma * v + lr * grad(abc - gamma * v, u)
     abc -= v
-    print(np.sqrt(calc_mse(abc, u)))
+
+    if i % 10 == 0:
+        rmse = np.sqrt(calc_mse(abc, u))
+        print(rmse, list(abc))
+        sys.stdout.flush()
