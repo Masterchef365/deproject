@@ -31,8 +31,6 @@ def grad(abc, u):
     m = np.dot(xyz1, abc[:4])
     p = np.dot(xyz1, abc[4:])
 
-    s = np.sign(m - u * p)
-
     grad = np.zeros((len(u), 8))
 
     mp = m / np.abs(p)
@@ -42,16 +40,17 @@ def grad(abc, u):
     grad[:, :4] = xyz1
     grad[:, 4:] = xyz1 * mp
 
+    s = np.sign(m - u * p)
     sp = s / np.abs(p)
     sp = sp[:, np.newaxis]
-    sp = mp[:, tuple([0]*8)]
+    sp = sp[:, tuple([0]*8)]
 
     grad *= sp
 
     return np.average(grad, axis=0)
 
 
-lr = 1e-2
+lr = 1e-4
 iters = 100000000000
 for _ in range(iters):
     abc -= grad(abc, u) * lr
