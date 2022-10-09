@@ -5,42 +5,54 @@ f = np.loadtxt("data.csv", delimiter=',')
 xyz = f[:, :3]
 uv = f[:, 3:]
 
+u = uv[:, 0]
+v = uv[:, 1]
+
 # Construct homogenous matrices
-xyz1 = np.ones((len(xyz), 8))
+xyz1 = np.ones((len(xyz), 4))
 xyz1[:, 0:3] = xyz
-xyz1[:, 4:7] = xyz
 
-xyz1_u = xyz1.copy()
-xyz1_u[:, 4:] *= uv[:, (0, 0, 0, 0)]
-
-xyz1_v = xyz1.copy()
-xyz1_v[:, 4:] *= uv[:, (1, 1, 1, 1)]
+# Initialize random weights
+abc = np.random.rand(8) * 2. - 1.
 
 
-# Solve for null space
-# https://scicomp.stackexchange.com/a/2511
-def nullspace(a):
-    q, r = np.linalg.qr(a.T)
-
-    eps = 1e-1  # Tolerance
-    r = len(list(filter(lambda x: abs(x) > eps, list(np.diag(r)))))
-
-    soln = q[:, len(q)-r]
-
-    return soln
-    print("soln: ", soln)
+# Calculate model accuracy
+def deproject(abc):
+    return np.dot(xyz1, abc[:4]) / np.dot(xyz1, abc[4:])
 
 
-def accuracy(soln, x):
-    res = np.dot(x, soln)
-    #print("res: ", res)
-
-    mse = np.dot(res.T, res) / len(x)
-    print("MSE: ", mse)
+def calc_mse(abc, u):
+    res = deproject(abc)
+    d = res - u
+    return np.dot(d.T, d)
 
 
-soln_u = nullspace(xyz1_u)
-soln_v = nullspace(xyz1_v)
+def grad(abc, u):
+    m = np.dot(xyz1, abc[:4])
+    p = np.dot(xyz1, abc[4:])
 
-accuracy(soln_u, xyz1_u)
-accuracy(soln_v, xyz1_v)
+    s = np.sign(m - u * p)
+
+    grad = np.zeros((len(u), 8))
+
+    mp = m / np.abs(p)
+    mp = mp[:, np.newaxis]
+    mp = mp[:, (0, 0, 0, 0)]
+
+    grad[:, :4] = xyz1
+    grad[:, 4:] = xyz1 * mp
+
+    sp = s / np.abs(p)
+    sp = sp[:, np.newaxis]
+    sp = mp[:, tuple([0]*8)]
+
+    grad *= sp
+
+    return np.average(grad, axis=0)
+
+
+lr = 1e-2
+iters = 100000000000
+for _ in range(iters):
+    abc -= grad(abc, u) * lr
+    print(calc_mse(abc, u))
