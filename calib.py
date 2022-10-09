@@ -13,10 +13,6 @@ v = uv[:, 1]
 xyz1 = np.ones((len(xyz), 4))
 xyz1[:, 0:3] = xyz
 
-# Initialize random weights
-np.random.seed(4)
-abc = np.random.rand(8) * 2. - 1.
-
 # Calculate model accuracy
 def deproject(abc):
     return np.dot(xyz1, abc[:4]) / np.dot(xyz1, abc[4:])
@@ -28,7 +24,7 @@ def calc_mse(abc, u):
     return np.dot(d.T, d)
 
 
-def grad(abc, u):
+def grad(abc, u, xyz1):
     m = np.dot(xyz1, abc[:4])
     p = np.dot(xyz1, abc[4:])
 
@@ -52,18 +48,39 @@ def grad(abc, u):
     return np.average(grad, axis=0)
 
 
-lr = 1e-5
+lr = 1e-2
 gamma = 0.9
 
-iters = 100000000000
+iters = 10_000
+n_samples = 1000
+tolerance = 0.1
 
-v = np.zeros_like(grad(abc, u))
+# Initialize random weights
+retry = 0
+while True:
+    np.random.seed(retry)
+    abc = np.random.rand(8) * 2. - 1.
+    v = np.zeros_like(grad(abc, u, xyz1))
 
-for i in range(iters):
-    v = gamma * v + lr * grad(abc - gamma * v, u)
-    abc -= v
+    for i in range(iters):
+        samples = np.random.randint(0, len(u), size=n_samples)
 
-    if i % 1 == 0:
-        rmse = np.sqrt(calc_mse(abc, u))
-        print(rmse, list(abc))
-        sys.stdout.flush()
+        xyz1_sample = xyz1[samples]
+        u_sample = u[samples]
+
+        v = gamma * v + lr * grad(abc - gamma * v, u_sample, xyz1_sample)
+        abc -= v
+
+        if i % 1000 == 0:
+            rmse = np.sqrt(calc_mse(abc, u))
+            #print(rmse, list(abc))
+            print(rmse)
+            sys.stdout.flush()
+
+    print(f"RETRY_{retry}")
+    print(abc)
+    sys.stdout.flush()
+    retry += 1
+
+    if abs(rmse) < tolerance:
+        break
