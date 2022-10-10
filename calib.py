@@ -13,9 +13,15 @@ v = uv[:, 1]
 xyz1 = np.ones((len(xyz), 4))
 xyz1[:, 0:3] = xyz
 
+
+# Calculate model accuracy
+def deproject_w(abc):
+    return np.dot(xyz1, abc[4:])
+
+
 # Calculate model accuracy
 def deproject(abc):
-    return np.dot(xyz1, abc[:4]) / np.dot(xyz1, abc[4:])
+    return np.dot(xyz1, abc[:4]) / deproject_w(abc)
 
 
 def calc_mse(abc, u):
@@ -77,16 +83,29 @@ def solve(u):
     return abc
 
 
-u_pred = deproject(solve(u))
-v_pred = deproject(solve(v))
+soln_u = solve(u)
+soln_v = solve(v)
+
+print(soln_u)
+print(soln_v)
+
+u_pred = deproject(soln_u)
+v_pred = deproject(soln_v)
+w_pred = deproject_w(soln_u)
+
 out = np.zeros((len(xyz), 6))
 out[:, :3] = xyz
-out[:, 3] = u_pred
-out[:, 4] = v_pred
+
+w_pred *= 4.
+w = -w_pred - np.trunc(-w_pred)
+
+out[:, 3] = w
+out[:, 4] = w
+out[:, 5] = w
 
 idx = np.bitwise_and(
-    np.bitwise_and(out[:, 3] >= 0, out[:, 3] <= 1),
-    np.bitwise_and(out[:, 4] >= 0, out[:, 4] <= 1),
+    np.bitwise_and(u_pred >= 0, u_pred <= 1),
+    np.bitwise_and(v_pred >= 0, v_pred <= 1),
 )
 out = out[idx]
 
