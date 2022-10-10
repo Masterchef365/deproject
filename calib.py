@@ -30,20 +30,19 @@ def grad(abc, u, xyz1):
 
     grad = np.zeros((len(u), 8))
 
-    mp = np.abs(m / p - u)
-    j = m - u * p
+    mp = m / np.abs(p)
+    mp = mp[:, np.newaxis]
+    mp = mp[:, (0, 0, 0, 0)]
 
-    a = j / (p**2 * mp)
-    b = -(j * m) / (p**3 * mp)
+    grad[:, :4] = xyz1
+    grad[:, 4:] = xyz1 * mp
 
-    a = a[:, np.newaxis]
-    a = a[:, (0, 0, 0, 0)]
+    s = np.sign(m - u * p)
+    sp = s / np.abs(p)
+    sp = sp[:, np.newaxis]
+    sp = sp[:, tuple([0]*8)]
 
-    b = b[:, np.newaxis]
-    b = b[:, (0, 0, 0, 0)]
-
-    grad[:, :4] = xyz1 * a
-    grad[:, 4:] = xyz1 * b
+    grad *= sp
 
     return np.average(grad, axis=0)
 
@@ -82,7 +81,13 @@ u_pred = deproject(solve(u))
 v_pred = deproject(solve(v))
 out = np.zeros((len(xyz), 6))
 out[:, :3] = xyz
-out[:, 3] = np.abs(u_pred - u)
-out[:, 4] = np.abs(v_pred - v)
+out[:, 3] = u_pred
+out[:, 4] = v_pred
+
+idx = np.bitwise_and(
+    np.bitwise_and(out[:, 3] >= 0, out[:, 3] <= 1),
+    np.bitwise_and(out[:, 4] >= 0, out[:, 4] <= 1),
+)
+out = out[idx]
 
 np.savetxt("out.csv", out, delimiter=',')
