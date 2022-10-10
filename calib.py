@@ -91,17 +91,21 @@ print(soln_v)
 
 u_pred = deproject(soln_u)
 v_pred = deproject(soln_v)
-w_pred = deproject_w(soln_u)
+w_pred_u = deproject_w(soln_u)
+w_pred_v = deproject_w(soln_v)
 
 out = np.zeros((len(xyz), 6))
 out[:, :3] = xyz
 
-w_pred *= 4.
-w = -w_pred - np.trunc(-w_pred)
+w_pred_u *= 4.
+w_u = -w_pred_u - np.trunc(-w_pred_u)
 
-out[:, 3] = w
-out[:, 4] = w
-out[:, 5] = w
+w_pred_v *= 4.
+w_v = -w_pred_v - np.trunc(-w_pred_v)
+
+out[:, 3] = w_u
+out[:, 4] = w_v
+# out[:, 5] = 0.0
 
 idx = np.bitwise_and(
     np.bitwise_and(u_pred >= 0, u_pred <= 1),
