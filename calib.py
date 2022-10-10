@@ -53,12 +53,11 @@ gamma = 0.9
 
 iters = 10_000
 n_samples = 1000
-tolerance = 0.1
+
 
 # Initialize random weights
-retry = 0
-while True:
-    np.random.seed(retry)
+def solve(u):
+    np.random.seed(0)
     abc = np.random.rand(8) * 2. - 1.
     v = np.zeros_like(grad(abc, u, xyz1))
 
@@ -73,14 +72,17 @@ while True:
 
         if i % 1000 == 0:
             rmse = np.sqrt(calc_mse(abc, u))
-            #print(rmse, list(abc))
             print(rmse)
             sys.stdout.flush()
 
-    print(f"RETRY_{retry}")
-    print(abc)
-    sys.stdout.flush()
-    retry += 1
+    return abc
 
-    if abs(rmse) < tolerance:
-        break
+
+u_pred = deproject(solve(u))
+v_pred = deproject(solve(v))
+out = np.zeros((len(xyz), 6))
+out[:, :3] = xyz
+out[:, 3] = np.abs(u_pred - u)
+out[:, 4] = np.abs(v_pred - v)
+
+np.savetxt("out.csv", out, delimiter=',')
