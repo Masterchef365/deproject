@@ -6,6 +6,7 @@ void main() {
     vec3 pos = v_pos;
     gl_Position = vec4(pos, 1.);
     gl_PointSize = 2.0;
-    f_color = vec4(pos, 1.);
+    vec3 color = vec3(fract(v_color.z * 3.));
+    f_color = vec4(color, 1.);
 }
 

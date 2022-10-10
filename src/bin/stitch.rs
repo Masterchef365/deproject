@@ -226,8 +226,9 @@ fn main() -> Result<()> {
                     //let points: Vec<Vertex> = projector_pcld.into_iter().map(|p| Vertex::new(p, p)).collect();
                     let points: Vec<Vertex> = pointcloud
                         .into_iter()
+                        .filter(|p| p[2] != 0.)
                         .map(|p| deproject(&model, p))
-                        .map(|p @ [x, y, z]| Vertex::new([y, -x, 0.5], p))
+                        .map(|p @ [x, y, _]| Vertex::new([y, -x, 0.5], p))
                         .collect();
 
                     gl.clear(glow::COLOR_BUFFER_BIT);
@@ -243,7 +244,7 @@ fn main() -> Result<()> {
                     gl.bind_buffer(glow::ARRAY_BUFFER, None);
 
                     gl.bind_vertex_array(Some(point_array));
-                    gl.draw_arrays(glow::POINTS, 0, total_points as _);
+                    gl.draw_arrays(glow::POINTS, 0, points.len() as _);
                     gl.bind_vertex_array(None);
 
                     //gl.uniform_3_f32(loc.as_ref(), x, y, z);
