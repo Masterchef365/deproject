@@ -1,11 +1,11 @@
+use anyhow::{ensure, Ok, Result};
+use bytemuck::{Pod, Zeroable};
+use deproject::{pointcloud, MinimalImage};
+use glow::HasContext;
+use glutin::window::Fullscreen;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
-use deproject::{MinimalImage, pointcloud};
-use glow::HasContext;
-use bytemuck::{Pod, Zeroable};
-use anyhow::{Result, Ok, ensure};
-use glutin::window::Fullscreen;
 
 use realsense_rust::kind::Rs2Option;
 use realsense_rust::{
@@ -16,7 +16,6 @@ use realsense_rust::{
     kind::{Rs2CameraInfo, Rs2Format, Rs2StreamKind},
     pipeline::InactivePipeline,
 };
-
 
 type Model = [[f32; 8]; 2];
 
@@ -80,9 +79,9 @@ fn main() -> Result<()> {
         .find(|p| p.kind() == Rs2StreamKind::Depth)
         .unwrap();
     /*let color_stream = streams
-        .iter()
-        .find(|p| p.kind() == Rs2StreamKind::Color)
-        .unwrap();*/
+    .iter()
+    .find(|p| p.kind() == Rs2StreamKind::Color)
+    .unwrap();*/
 
     let depth_intrinsics = depth_stream.intrinsics()?;
     //let depth_to_color_extrinsics = depth_stream.extrinsics(color_stream)?;
@@ -112,22 +111,6 @@ fn main() -> Result<()> {
                 glow::Context::from_loader_function(|s| window.get_proc_address(s) as *const _);
             (gl, "#version 450", window, event_loop)
         };
-
-
-        // Setup point array
-        let point_array = gl.create_vertex_array().unwrap();
-        gl.bind_vertex_array(Some(point_array));
-        let point_verts = vec![Vertex::default(); total_points];
-        let point_buf = gl.create_buffer().expect("Cannot create vertex buffer");
-        gl.bind_buffer(glow::ARRAY_BUFFER, Some(point_buf));
-        gl.buffer_data_u8_slice(
-            glow::ARRAY_BUFFER,
-            bytemuck::cast_slice(&point_verts),
-            glow::STREAM_DRAW,
-        );
-
-        gl.bind_vertex_array(None);
-        gl.bind_buffer(glow::ARRAY_BUFFER, None);
 
 
         let program = gl.create_program().expect("Cannot create program");
@@ -166,7 +149,46 @@ fn main() -> Result<()> {
         }
 
         gl.use_program(Some(program));
-        gl.clear_color(0.0, 0.2, 0.0, 1.0);
+        gl.clear_color(0.0, 0.0, 0.0, 1.0);
+        gl.enable(glow::VERTEX_PROGRAM_POINT_SIZE);
+
+        // Setup point array
+        let point_array = gl.create_vertex_array().unwrap();
+        gl.bind_vertex_array(Some(point_array));
+        let point_verts = vec![Vertex::default(); total_points];
+        let point_buf = gl.create_buffer().expect("Cannot create vertex buffer");
+        gl.bind_buffer(glow::ARRAY_BUFFER, Some(point_buf));
+
+        // Set vertex attributes
+        gl.enable_vertex_attrib_array(0);
+        gl.vertex_attrib_pointer_f32(
+            0,
+            3,
+            glow::FLOAT,
+            false,
+            std::mem::size_of::<Vertex>() as i32,
+            0,
+        );
+
+        gl.enable_vertex_attrib_array(1);
+        gl.vertex_attrib_pointer_f32(
+            1,
+            3,
+            glow::FLOAT,
+            false,
+            std::mem::size_of::<Vertex>() as i32,
+            3 * std::mem::size_of::<f32>() as i32,
+        );
+
+
+        gl.buffer_data_u8_slice(
+            glow::ARRAY_BUFFER,
+            bytemuck::cast_slice(&point_verts),
+            glow::STREAM_DRAW,
+        );
+
+        gl.bind_vertex_array(None);
+        gl.bind_buffer(glow::ARRAY_BUFFER, None);
 
         // We handle events differently between targets
 
@@ -188,20 +210,25 @@ fn main() -> Result<()> {
                     //let color_frame: &ColorFrame = &frames.frames_of_type()[0];
                     let depth_frame: &DepthFrame = &frames.frames_of_type()[0];
 
-                    let in_depth_buf: Vec<u16> = depth_frame.iter().map(|p| match p {
-                        PixelKind::Z16 { depth } => *depth,
-                        _ => panic!("{:?}", p),
-                    }).collect();
+                    let in_depth_buf: Vec<u16> = depth_frame
+                        .iter()
+                        .map(|p| match p {
+                            PixelKind::Z16 { depth } => *depth,
+                            _ => panic!("{:?}", p),
+                        })
+                    .collect();
 
                     let depth_image = MinimalImage::new(in_depth_buf, depth_intrinsics.width(), 1);
                     let mask = depth_image.map(|_| [true]);
 
                     let pointcloud = pointcloud(&depth_image, &mask, &depth_intrinsics);
 
-                    let projector_pcld: Vec<[f32; 3]> = pointcloud.into_iter().map(|p| deproject(&model, p)).collect();
-
                     //let points: Vec<Vertex> = projector_pcld.into_iter().map(|p| Vertex::new(p, p)).collect();
-                    let points: Vec<Vertex> = projector_pcld.into_iter().map(|p@[x,y,z]| Vertex::new([x, y, -z], p)).collect();
+                    let points: Vec<Vertex> = pointcloud
+                        .into_iter()
+                        .map(|p| deproject(&model, p))
+                        .map(|p @ [x, y, z]| Vertex::new([y, -x, 0.5], p))
+                        .collect();
 
                     gl.clear(glow::COLOR_BUFFER_BIT);
 
@@ -241,7 +268,6 @@ fn main() -> Result<()> {
         });
     }
 }
-
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]
