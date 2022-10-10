@@ -1,8 +1,14 @@
 import numpy as np
 import sys
+from os.path import join
+
+root_path = sys.argv[1]
+calib_points_path = join(root_path, "calib_points.csv")
+matrix_path = join(root_path, "matrix.csv")
+predict_path = join(root_path, "predict.csv")
 
 # Load file
-f = np.loadtxt("data.csv", delimiter=',')
+f = np.loadtxt(calib_points_path, delimiter=',')
 xyz = f[:, :3]
 uv = f[:, 3:]
 
@@ -76,9 +82,12 @@ def solve(u):
 
     return abc
 
+soln_u = solve(u)
+soln_v = solve(v)
 
-u_pred = deproject(solve(u))
-v_pred = deproject(solve(v))
+u_pred = deproject(soln_u)
+v_pred = deproject(soln_v)
+
 out = np.zeros((len(xyz), 6))
 out[:, :3] = xyz
 out[:, 3] = u_pred
@@ -90,4 +99,8 @@ idx = np.bitwise_and(
 )
 out = out[idx]
 
-np.savetxt("out.csv", out, delimiter=',')
+np.savetxt(predict_path, out, delimiter=',')
+
+matrix = np.array([soln_u, soln_v])
+
+np.savetxt(matrix_path, matrix, delimiter=',')

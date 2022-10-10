@@ -13,14 +13,14 @@ use std::{
 
 fn main() -> Result<()> {
     let mut args = std::env::args().skip(1);
-    let path = PathBuf::from(args.next().context("Missing path arg")?);
+    let root_path = PathBuf::from(args.next().context("Missing path arg")?);
     let thresh: f32 = args
         .next()
         .unwrap_or("0.5".to_string())
         .parse::<f32>()
         .context("Threshold must be float")?;
 
-    let paths = Paths::from_root(&path)?;
+    let paths = Paths::from_root(&root_path)?;
 
     let idx = 7;
     let xy = xy_image(&paths, idx)?;
@@ -29,7 +29,7 @@ fn main() -> Result<()> {
 
     write_color_png("xy.png", &color)?;
 
-    let depth = avg_depth(&path, 100)?;
+    let depth = avg_depth(&root_path, 100)?;
 
     let mask = mask(&paths, idx, thresh * 256.)?;
     let mask = mask.zip(&depth, |m, d| [m[0] && d[0] != 0]);
@@ -38,14 +38,14 @@ fn main() -> Result<()> {
 
     write_color_png("mask.png", &mask_color)?;
 
-    let f = File::open(path.join("intrinsics.json"))?;
+    let f = File::open(root_path.join("intrinsics.json"))?;
     let intrinsics: Rs2IntrinsicsSerde = serde_json::from_reader(f)?;
     let intrinsics: Rs2Intrinsics = Rs2Intrinsics(intrinsics.into());
 
     //let pcld = pointcloud(&xy, &depth, &mask, &intrinsics);
-    let mut pcld = pointcloud(&depth, &mask, &intrinsics);
+    let pcld = pointcloud(&depth, &mask, &intrinsics);
 
-    let mut pcld_xy: Vec<[f32; 2]> = xy
+    let pcld_xy: Vec<[f32; 2]> = xy
         .data()
         .chunks_exact(2)
         .zip(mask.data())
@@ -53,38 +53,9 @@ fn main() -> Result<()> {
         .map(|(xy, _)| [xy[0], xy[1]])
         .collect();
 
-    let rng = SmallRng::seed_from_u64(0);
+    let path = root_path.join("calib_points.csv");
 
-    let mut output_xyz = pcld.to_vec();
-    let mut output_rg = vec![]; //pcld_xy.to_vec();
-
-    //let model = best_model(rng, &pcld, &pcld_xy, 100);
-    let model = create_model(&pcld, &pcld_xy).unwrap();
-
-    let mse = model_mse(&model, &pcld, &pcld_xy);
-    dbg!(mse);
-
-    /*
-    for &[x, y, z] in &pcld {
-        let xyz = Vector3::new(x, y, z);
-        let uv = f_model(&model, xyz);
-        //println!("{}", uv);
-        if uv.x >= 0. && uv.x <= 1. && uv.y >= 0. && uv.y <= 1. {
-            output_rg.push([uv.x, uv.y]);
-        } else {
-            output_rg.push([0.1, 0.1]);
-        }
-    }
-    */
-
-    for (&[x, y, z], &[u, v]) in pcld.iter().zip(&pcld_xy) {
-        output_rg.push([u, v]);
-    }
-
-
-    write_pcld("out.csv", &output_xyz, &output_rg)?;
-
-    //println!("{}", origin);
+    write_pcld(path, &pcld, &pcld_xy)?;
 
     Ok(())
 }
