@@ -228,7 +228,7 @@ fn main() -> Result<()> {
                         .into_iter()
                         .filter(|p| p[2] != 0.)
                         .map(|p| deproject(&model, p))
-                        .map(|p @ [x, y, _]| Vertex::new([y, -x, 0.5], p))
+                        .map(|p @ [x, y, _]| Vertex::new([-(y * 2. - 1.), -(x * 2. - 1.), 0.5], p))
                         .collect();
 
                     gl.clear(glow::COLOR_BUFFER_BIT);
