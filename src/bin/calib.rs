@@ -11,6 +11,7 @@ use std::{
     io::{self, BufWriter, Write},
     path::{Path, PathBuf},
 };
+use deproject::plane::{Plane, ransac_plane};
 
 fn main() -> Result<()> {
     let mut args = std::env::args().skip(1);
@@ -57,6 +58,17 @@ fn main() -> Result<()> {
     let path = root_path.join("calib_points.csv");
 
     write_pcld(path, &pcld, &pcld_xy)?;
+
+    let xyz: Vec<Point3<f32>> = pcld
+        .into_iter()
+        .map(Point3::from)
+        .collect();
+
+    let plane = ransac_plane(&xyz, 1000, 0.5 / 100.);
+
+    let path = root_path.join("plane.csv");
+
+    plane.write(File::create(path)?)?;
 
     Ok(())
 }

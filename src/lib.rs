@@ -6,6 +6,8 @@ use std::fs::File;
 use std::io::BufWriter;
 use std::str::FromStr;
 
+pub mod plane;
+
 use std::{
     collections::HashSet,
     path::{Path, PathBuf},

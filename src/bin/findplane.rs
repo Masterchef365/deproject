@@ -1,9 +1,9 @@
 use std::io::{BufRead, Write};
+use nalgebra::{Point3, Vector3};
 use std::path::Path;
 
 use anyhow::{Ok, Result};
-use nalgebra::{Point3, Vector3};
-use rand::seq::SliceRandom;
+use deproject::plane::*;
 
 fn main() -> Result<()> {
     let mut args = std::env::args().skip(1);
@@ -31,7 +31,7 @@ fn main() -> Result<()> {
         xyzrgb.push(v);
     }
 
-    write_csv(Path::new("uhhhh.csv"), &xyzrgb)?;
+    write_csv(Path::new("plane_projected.csv"), &xyzrgb)?;
 
     Ok(())
 }
@@ -75,67 +75,3 @@ fn write_csv<const N: usize>(path: &Path, data: &[[f32; N]]) -> Result<()> {
     Ok(())
 }
 
-#[derive(Default, Copy, Clone)]
-struct Plane {
-    origin: Point3<f32>,
-    normal: Vector3<f32>,
-}
-
-impl Plane {
-    fn new([origin, a, b]: [Point3<f32>; 3]) -> Self {
-        let normal = (a - origin).cross(&(b - origin)).normalize();
-        Self { origin, normal }
-    }
-
-    fn signed_dist(&self, point: Point3<f32>) -> f32 {
-        (point - self.origin).dot(&self.normal)
-    }
-
-    fn distance(&self, point: Point3<f32>) -> f32 {
-        self.signed_dist(point).abs()
-    }
-
-    fn proj(&self, point: Point3<f32>) -> Point3<f32> {
-        point - self.signed_dist(point) * self.normal
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_plane() {
-        let plane = Plane::new([
-            Point3::new(0., 0., 1.),
-            Point3::new(0., 1., 1.),
-            Point3::new(0., 1., 0.3),
-        ]);
-
-        assert_eq!(plane.distance(Point3::new(1., 0., 0.)), 1.0);
-    }
-}
-
-fn ransac_plane(data: &[Point3<f32>], iters: usize, thresh: f32) -> Plane {
-    let mut rng = rand::thread_rng();
-
-    let mut best_score = 0;
-    let mut best_plane = Plane::default();
-
-    for _ in 0..iters {
-        let points = [(); 3].map(|_| *data.choose(&mut rng).unwrap());
-        let plane = Plane::new(points);
-
-        let score = data
-            .iter()
-            .filter(|&&pt| plane.distance(Point3::from(pt)) <= thresh)
-            .count();
-
-        if score > best_score {
-            best_plane = plane;
-            best_score = score;
-        }
-    }
-
-    best_plane
-}
