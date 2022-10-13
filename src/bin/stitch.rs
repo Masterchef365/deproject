@@ -1,8 +1,10 @@
 use anyhow::{ensure, Ok, Result};
 use bytemuck::{Pod, Zeroable};
+use deproject::plane::Plane;
 use deproject::{pointcloud, MinimalImage};
 use glow::HasContext;
 use glutin::window::Fullscreen;
+use nalgebra::Point3;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -16,6 +18,7 @@ use realsense_rust::{
     kind::{Rs2CameraInfo, Rs2Format, Rs2StreamKind},
     pipeline::InactivePipeline,
 };
+use std::fs::File;
 
 type Model = [[f32; 8]; 2];
 
@@ -47,8 +50,11 @@ fn deproject(model: &Model, [x, y, z]: [f32; 3]) -> [f32; 3] {
 fn main() -> Result<()> {
     let mut args = std::env::args().skip(1);
     let root_path: PathBuf = args.next().expect("Requires root path").into();
-    let calib_points_path = root_path.join("matrix.csv");
-    let model = load_model(&calib_points_path)?;
+    let model_path = root_path.join("matrix.csv");
+    let model = load_model(&model_path)?;
+
+    let plane_path = root_path.join("plane.csv");
+    let plane = Plane::read(File::open(plane_path)?)?;
 
     // Open camera
     // Check for depth or color-compatible devices.
@@ -227,6 +233,7 @@ fn main() -> Result<()> {
                     let points: Vec<Vertex> = pointcloud
                         .into_iter()
                         .filter(|p| p[2] != 0.)
+                        .map(|p| *plane.proj(Point3::from(p)).coords.as_ref())
                         .map(|p| deproject(&model, p))
                         .map(|p @ [x, y, _]| Vertex::new([-(y * 2. - 1.), -(x * 2. - 1.), 0.5], p))
                         .collect();

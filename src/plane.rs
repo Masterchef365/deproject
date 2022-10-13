@@ -1,4 +1,4 @@
-use std::io::{Write, Read};
+use std::io::{Read, Write};
 
 use anyhow::Result;
 use nalgebra::{Point3, Vector3};
@@ -51,16 +51,23 @@ impl Plane {
         let mut l = s.lines();
 
         let mut origin = [0.0; 3];
-        l.next().unwrap().split(',').zip(origin.iter_mut()).for_each(|(f, o)| *o = f.parse().unwrap());
+        l.next()
+            .unwrap()
+            .split(',')
+            .zip(origin.iter_mut())
+            .for_each(|(f, o)| *o = f.parse().unwrap());
 
         let mut normal = [0.0; 3];
-        l.next().unwrap().split(',').zip(normal.iter_mut()).for_each(|(f, n)| *n = f.parse().unwrap());
+        l.next()
+            .unwrap()
+            .split(',')
+            .zip(normal.iter_mut())
+            .for_each(|(f, n)| *n = f.parse().unwrap());
 
         Ok(Self {
             origin: Point3::from(origin),
             normal: Vector3::from(normal),
         })
-
     }
 }
 
