@@ -122,7 +122,6 @@ fn main() -> Result<()> {
             (gl, "#version 450", window, event_loop)
         };
 
-
         let program = gl.create_program().expect("Cannot create program");
 
         let vertex_shader_source = include_str!("shaders/default.vert");
@@ -190,7 +189,6 @@ fn main() -> Result<()> {
             3 * std::mem::size_of::<f32>() as i32,
         );
 
-
         gl.buffer_data_u8_slice(
             glow::ARRAY_BUFFER,
             bytemuck::cast_slice(&point_verts),
@@ -226,22 +224,30 @@ fn main() -> Result<()> {
                             PixelKind::Z16 { depth } => *depth,
                             _ => panic!("{:?}", p),
                         })
-                    .collect();
+                        .collect();
 
                     let depth_image = MinimalImage::new(in_depth_buf, depth_intrinsics.width(), 1);
                     let mask = depth_image.map(|_| [true]);
 
                     let pointcloud = pointcloud(&depth_image, &mask, &depth_intrinsics);
 
-                    //let points: Vec<Vertex> = projector_pcld.into_iter().map(|p| Vertex::new(p, p)).collect();
+                    let color_dist = |dist: f32| {
+                        if (0.05..0.15).contains(&dist) {
+                            [1., 0., 0.]
+                        } else {
+                            [0., 0.5, 0.5]
+                        }
+                    };
+
                     let points: Vec<Vertex> = pointcloud
                         .into_iter()
                         .filter(|p| p[2] != 0.)
-                        //.map(|p| *plane.proj(Point3::from(p)).coords.as_ref())
-                        .map(|p| Vertex::new(
-                            to_gl_space(deproject(&model, p)), 
-                            [plane.distance(Point3::from(p)) * 10.; 3]
-                        ))
+                        .map(|p| {
+                            Vertex::new(
+                                to_gl_space(deproject(&model, p)),
+                                color_dist(plane.distance(Point3::from(p))),
+                            )
+                        })
                         .collect();
 
                     gl.clear(glow::COLOR_BUFFER_BIT);
