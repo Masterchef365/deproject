@@ -16,9 +16,9 @@ use deproject::plane::{Plane, ransac_plane};
 fn main() -> Result<()> {
     let mut args = std::env::args().skip(1);
     let root_path = PathBuf::from(args.next().context("Missing path arg")?);
-    let thresh: f32 = args
+    let snr_thresh: f32 = args
         .next()
-        .unwrap_or("0.5".to_string())
+        .unwrap_or("2.5".to_string())
         .parse::<f32>()
         .context("Threshold must be float")?;
 
@@ -33,7 +33,7 @@ fn main() -> Result<()> {
 
     let depth = avg_depth(&root_path, 100)?;
 
-    let mask = mask(&paths, idx, thresh)?;
+    let mask = mask(&paths, idx, snr_thresh)?;
     let mask = mask.zip(&depth, |m, d| [m[0] && d[0] != 0]);
 
     let mask_color = mask.map(|v| [if v[0] { u8::MAX } else { 0 }; 3]);
@@ -226,7 +226,7 @@ fn write_pcld(path: impl AsRef<Path>, pcld: &[[f32; 3]], xy: &[[f32; 2]]) -> Res
     Ok(())
 }
 
-fn mask(paths: &Paths, idx: usize, thresh: f32) -> Result<MinimalImage<bool>> {
+fn mask(paths: &Paths, idx: usize, snr_thresh: f32) -> Result<MinimalImage<bool>> {
     // Calculate average difference per pixel
     let mut diff_sum = load_color_png(&paths.horiz[0][idx][0].color)?.map(|_| [0f32]);
     let mut total = 0.;
@@ -268,7 +268,7 @@ fn mask(paths: &Paths, idx: usize, thresh: f32) -> Result<MinimalImage<bool>> {
 
     let diff_stddev = diff_dev_sum.map(|s| [s[0] / total as f32]);
 
-    let mask = diff_stddev.zip(&diff_avg, |s, a| [s[0] / a[0] < thresh]);
+    let mask = diff_stddev.zip(&diff_avg, |s, a| [a[0] / s[0] > snr_thresh]);
 
     Ok(mask)
 }
