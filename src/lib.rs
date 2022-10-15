@@ -25,7 +25,7 @@ pub struct RecordArgs {
     pub name: String,
 
     /// Maximum stripe granularity
-    #[clap(short, long, value_parser, default_value_t = 5)]
+    #[clap(short, long, value_parser, default_value_t = 10)]
     pub max_steps: usize,
 
     /// Number of samples
