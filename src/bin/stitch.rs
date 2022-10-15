@@ -22,6 +22,10 @@ use std::fs::File;
 
 type Model = [[f32; 8]; 2];
 
+fn to_gl_space([x, y, z]: [f32; 3]) -> [f32; 3] {
+    [-(y * 2. - 1.), -(x * 2. - 1.), 0.5]
+}
+
 fn load_model(path: &Path) -> Result<Model> {
     let s = std::fs::read_to_string(path)?;
     let mut v = [[0.0f32; 8]; 2];
@@ -233,9 +237,11 @@ fn main() -> Result<()> {
                     let points: Vec<Vertex> = pointcloud
                         .into_iter()
                         .filter(|p| p[2] != 0.)
-                        .map(|p| *plane.proj(Point3::from(p)).coords.as_ref())
-                        .map(|p| deproject(&model, p))
-                        .map(|p @ [x, y, _]| Vertex::new([-(y * 2. - 1.), -(x * 2. - 1.), 0.5], p))
+                        //.map(|p| *plane.proj(Point3::from(p)).coords.as_ref())
+                        .map(|p| Vertex::new(
+                            to_gl_space(deproject(&model, p)), 
+                            [plane.distance(Point3::from(p)) * 10.; 3]
+                        ))
                         .collect();
 
                     gl.clear(glow::COLOR_BUFFER_BIT);
