@@ -254,13 +254,9 @@ fn mask(paths: &Paths, idx: usize, thresh: f32) -> Result<MinimalImage<bool>> {
         }
     }
 
-    let diff_stddev = diff_dev_sum.zip(&diff_avg, |s, a| [(s[0] / total as f32) / a[0]]);
+    let diff_stddev = diff_dev_sum.map(|s| [s[0] / total as f32]);
 
-    /*for (a, s) in diff_avg.data().iter().zip(diff_stddev.data()) {
-        println!("{},{}", a, s);
-    }*/
-
-    let mask = diff_stddev.map(|v| [v[0] < thresh]);
+    let mask = diff_stddev.zip(&diff_avg, |s, a| [s[0] / a[0] < thresh]);
 
     Ok(mask)
 }
