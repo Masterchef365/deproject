@@ -57,7 +57,7 @@ lr = 1e-2
 gamma = 0.9
 
 iters = 10_000
-n_samples = 1000
+n_samples = 100
 
 
 # Initialize random weights

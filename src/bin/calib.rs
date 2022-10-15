@@ -1,7 +1,8 @@
 use anyhow::{Context, Ok, Result};
 use deproject::{project::rs2_deproject_pixel_to_point, *};
 use nalgebra::{
-    DMatrix, DVector, Matrix2x4, Matrix4, Matrix4x2, OMatrix, Point3, Vector2, Vector4, SVD, Vector3,
+    DMatrix, DVector, Matrix2x4, Matrix4, Matrix4x2, OMatrix, Point3, Vector2, Vector3, Vector4,
+    SVD,
 };
 use rand::prelude::*;
 use realsense_rust::base::Rs2Intrinsics;
@@ -31,7 +32,7 @@ fn main() -> Result<()> {
 
     let depth = avg_depth(&root_path, 100)?;
 
-    let mask = mask(&paths, idx, thresh * 256.)?;
+    let mask = mask(&paths, idx, thresh)?;
     let mask = mask.zip(&depth, |m, d| [m[0] && d[0] != 0]);
 
     let mask_color = mask.map(|v| [if v[0] { u8::MAX } else { 0 }; 3]);
@@ -182,7 +183,7 @@ fn create_model(pcld: &[[f32; 3]], uv: &[[f32; 2]]) -> Option<Model> {
             let u = uv[uvi];
             let [x, y, z] = *xyz;
             // Homogenous coords
-            data.extend_from_slice(&[x, y, z, 1., -u*x, -u*y, -u*z, -u]);
+            data.extend_from_slice(&[x, y, z, 1., -u * x, -u * y, -u * z, -u]);
         }
 
         let x = DMatrix::from_column_slice(8, pcld.len(), &data);
@@ -190,7 +191,7 @@ fn create_model(pcld: &[[f32; 3]], uv: &[[f32; 2]]) -> Option<Model> {
         // SVD in search of null space
         let svd = SVD::new(x.clone(), false, true);
         let v = svd.v_t.unwrap();
-        let vector = v.column(v.ncols()-1);
+        let vector = v.column(v.ncols() - 1);
 
         println!("{}", svd.singular_values);
 
@@ -213,17 +214,49 @@ fn write_pcld(path: impl AsRef<Path>, pcld: &[[f32; 3]], xy: &[[f32; 2]]) -> Res
     Ok(())
 }
 
-
 fn mask(paths: &Paths, idx: usize, thresh: f32) -> Result<MinimalImage<bool>> {
-    let v = 4;
-    let sample = &paths.horiz[v][idx];
+    // Calculate average difference per pixel
+    let mut diff_sum = load_color_png(&paths.horiz[0][idx][0].color)?.map(|_| [0f32]);
+    let mut total = 0.;
 
-    let a = load_color_png(&sample[0].color)?.map(|c| [intensity(c)]);
-    let b = load_color_png(&sample[1].color)?.map(|c| [intensity(c)]);
+    for orient in [&paths.horiz, &paths.vert] {
+        for granularity in orient {
+            let sample = &granularity[idx];
+            let a = load_color_png(&sample[0].color)?.map(|c| [intensity(c)]);
+            let b = load_color_png(&sample[1].color)?.map(|c| [intensity(c)]);
+            diff_sum
+                .data_mut()
+                .iter_mut()
+                .zip(a.data())
+                .zip(b.data())
+                .for_each(|((d, a), b)| *d += (*a - *b).abs());
+            total += 1.;
+        }
+    }
 
-    let d = diff(&a, &b);
+    let diff_avg = diff_sum.map(|d| [d[0] / total as f32]);
 
-    let mask = d.map(|v| [v[0].abs() > thresh]);
+
+    // Calculate average deviation from average
+    let mut diff_dev_sum = load_color_png(&paths.horiz[0][idx][0].color)?.map(|_| [0f32]);
+    for orient in [&paths.horiz, &paths.vert] {
+        for granularity in orient {
+            let sample = &granularity[idx];
+            let a = load_color_png(&sample[0].color)?.map(|c| [intensity(c)]);
+            let b = load_color_png(&sample[1].color)?.map(|c| [intensity(c)]);
+            diff_dev_sum
+                .data_mut()
+                .iter_mut()
+                .zip(a.data())
+                .zip(b.data())
+                .zip(diff_avg.data())
+                .for_each(|(((d, a), b), avg)| *d += ((*a - *b).abs() - avg).abs());
+        }
+    }
+
+    let diff_stddev = diff_dev_sum.map(|s| [s[0] / total as f32]);
+
+    let mask = diff_stddev.zip(&diff_avg, |s, a| [s[0] / a[0] < thresh]);
 
     Ok(mask)
 }
@@ -297,8 +330,8 @@ fn sgncolor(v: f32) -> [u8; 3] {
 
 fn intensity(rgb: &[u8]) -> f32 {
     (rgb.iter()
-        .map(|&x| u32::from(x))
+        .map(|&x| f32::from(x) / 256.0)
         .map(|x| x * x)
-        .sum::<u32>() as f32)
+        .sum::<f32>() / 3.)
         .sqrt()
 }
