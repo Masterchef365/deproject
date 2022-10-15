@@ -158,7 +158,7 @@ fn main() -> Result<()> {
         }
 
         gl.use_program(Some(program));
-        gl.clear_color(0.0, 0.0, 0.0, 1.0);
+        gl.clear_color(0.0, 0.5, 0.5, 1.0);
         gl.enable(glow::VERTEX_PROGRAM_POINT_SIZE);
 
         // Setup point array
@@ -231,21 +231,17 @@ fn main() -> Result<()> {
 
                     let pointcloud = pointcloud(&depth_image, &mask, &depth_intrinsics);
 
-                    let color_dist = |dist: f32| {
-                        if (0.05..0.15).contains(&dist) {
-                            [1., 0., 0.]
-                        } else {
-                            [0., 0.5, 0.5]
-                        }
-                    };
+                    let dist_range = 0.05..0.15;
 
                     let points: Vec<Vertex> = pointcloud
                         .into_iter()
                         .filter(|p| p[2] != 0.)
+                        .filter(|&p| dist_range.contains(&plane.distance(Point3::from(p))))
+                        .map(|p| plane.proj(Point3::from(p)))
                         .map(|p| {
                             Vertex::new(
-                                to_gl_space(deproject(&model, p)),
-                                color_dist(plane.distance(Point3::from(p))),
+                                to_gl_space(deproject(&model, *p.coords.as_ref())),
+                                [1., 0., 0.]
                             )
                         })
                         .collect();
