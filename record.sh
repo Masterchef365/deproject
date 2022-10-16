@@ -1,1 +1,1 @@
-cargo run --release --bin record -- --name $1
+cargo run --release --bin record -- --samples 10 --name $1

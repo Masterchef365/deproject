@@ -241,7 +241,7 @@ fn main() -> Result<()> {
                         .map(|p| {
                             Vertex::new(
                                 to_gl_space(deproject(&model, *p.coords.as_ref())),
-                                [1., 0., 0.]
+                                [1., 0., 0.],
                             )
                         })
                         .collect();

@@ -1,33 +1,56 @@
 use std::io::{Read, Write};
 
 use anyhow::Result;
-use nalgebra::{Point3, Vector3};
+use nalgebra::{Point3, Vector3, Matrix4};
 use rand::seq::SliceRandom;
 
 #[derive(Default, Copy, Clone)]
 pub struct Plane {
     pub origin: Point3<f32>,
-    pub normal: Vector3<f32>,
+    pub x: Vector3<f32>,
+    pub y: Vector3<f32>,
+    pub z: Vector3<f32>,
 }
 
 impl Plane {
     pub fn new([origin, a, b]: [Point3<f32>; 3]) -> Self {
-        let normal = (a - origin).cross(&(b - origin)).normalize();
-        Self { origin, normal }
+        let x = (b - origin).normalize();
+        let y = (a - origin).cross(&x).normalize();
+        let z = x.cross(&y);
+
+        Self { origin, x, y, z }
     }
 
+    pub fn to_planespace(&self, point: Point3<f32>) -> Point3<f32> {
+        let v = point - self.origin;
+        Point3::new(
+            self.x.dot(&v),
+            self.y.dot(&v),
+            self.z.dot(&v),
+        )
+    }
+
+    pub fn from_planespace(&self, point: Point3<f32>) -> Point3<f32> {
+        let v = self.x * point.x + self.y * point.y + self.z * point.z;
+        self.origin + v
+    }
+
+    /// Signed distance in the y direction
     pub fn signed_dist(&self, point: Point3<f32>) -> f32 {
-        (point - self.origin).dot(&self.normal)
+        (point - self.origin).dot(&self.y)
     }
 
+    /// Distance in the y direction
     pub fn distance(&self, point: Point3<f32>) -> f32 {
         self.signed_dist(point).abs()
     }
 
+    /// Project a 3D point onto the y dimension of this plane
     pub fn proj(&self, point: Point3<f32>) -> Point3<f32> {
-        point - self.signed_dist(point) * self.normal
+        point - self.signed_dist(point) * self.y
     }
 
+    /// Serialize into the given writer
     pub fn write<W: Write>(&self, mut w: W) -> Result<()> {
         for x in self.origin.coords.as_slice() {
             write!(w, "{},", x)?;
@@ -35,39 +58,39 @@ impl Plane {
 
         writeln!(w)?;
 
-        for x in self.normal.as_slice() {
-            write!(w, "{},", x)?;
+        for part in [self.x, self.y, self.z] {
+            for x in part.as_slice() {
+                write!(w, "{},", x)?;
+            }
+            writeln!(w)?;
         }
-
-        writeln!(w)?;
 
         Ok(())
     }
 
+    /// Deserialize from the given reader
     pub fn read<R: Read>(mut r: R) -> Result<Self> {
         let mut s = String::new();
         r.read_to_string(&mut s)?;
 
         let mut l = s.lines();
 
-        let mut origin = [0.0; 3];
-        l.next()
-            .unwrap()
-            .split(',')
-            .zip(origin.iter_mut())
-            .for_each(|(f, o)| *o = f.parse().unwrap());
+        let mut parse_vect = || {
+            let mut part = [0.0; 3];
+            l.next()
+                .unwrap()
+                .split(',')
+                .zip(part.iter_mut())
+                .for_each(|(f, o)| *o = f.parse().unwrap());
+            part
+        };
 
-        let mut normal = [0.0; 3];
-        l.next()
-            .unwrap()
-            .split(',')
-            .zip(normal.iter_mut())
-            .for_each(|(f, n)| *n = f.parse().unwrap());
+        let origin = Point3::from(parse_vect());
+        let x = Vector3::from(parse_vect());
+        let y = Vector3::from(parse_vect());
+        let z = Vector3::from(parse_vect());
 
-        Ok(Self {
-            origin: Point3::from(origin),
-            normal: Vector3::from(normal),
-        })
+        Ok(Self { origin, x, y, z })
     }
 }
 
