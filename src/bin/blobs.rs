@@ -112,7 +112,7 @@ fn main() -> Result<()> {
         let mut cursor_pos = (0., 0.);
 
         let mut tracker = BlobTracker::new(0.01, 0, 99999);
-        
+
         let mut points = vec![];
 
         event_loop.run(move |event, _, control_flow| {
@@ -345,14 +345,13 @@ fn blob_box_lines(lines: &mut Vec<Vertex>, blob_boxes: &BlobBoxes) {
         })
     };
 
-    for (&bbox, _) in &blob_boxes.boxes {
+    let mut draw_box = |min: Point2<i32>, max: Point2<i32>, color: [f32; 3]| {
         let bw = blob_boxes.cell_width;
-        let color = [1., 0., 0.];
+        let tl: Point2<f32> = min.cast() * bw;
+        let br: Point2<f32> = max.cast() * bw + Vector2::from_element(bw);
 
-        let tl: Point2<f32> = bbox.cast() * blob_boxes.cell_width;
-        let tr = tl + Vector2::new(bw, 0.);
-        let br = tl + Vector2::new(bw, bw);
-        let bl = tl + Vector2::new(0., bw);
+        let tr = Point2::new(br.x, tl.y);
+        let bl = Point2::new(tl.x, br.y);
 
         push_vert(tl, color);
         push_vert(bl, color);
@@ -365,5 +364,9 @@ fn blob_box_lines(lines: &mut Vec<Vertex>, blob_boxes: &BlobBoxes) {
 
         push_vert(bl, color);
         push_vert(br, color);
+    };
+
+    for (&tl, _) in &blob_boxes.boxes {
+        draw_box(tl, tl, [1., 0., 0.]);
     }
 }
