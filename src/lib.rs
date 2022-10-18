@@ -1,4 +1,8 @@
 use realsense_rust::base::Rs2Intrinsics;
+use bytemuck::{Pod, Zeroable};
+
+pub mod fluid;
+pub mod array2d;
 
 pub mod image;
 pub mod plane;
@@ -43,4 +47,20 @@ pub fn pointcloud(
     }
 
     pcld
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Vertex {
+    pub pos: [f32; 3],
+    pub color: [f32; 3],
+}
+
+unsafe impl Zeroable for Vertex {}
+unsafe impl Pod for Vertex {}
+
+impl Vertex {
+    pub fn new(pos: [f32; 3], color: [f32; 3]) -> Self {
+        Self { pos, color }
+    }
 }

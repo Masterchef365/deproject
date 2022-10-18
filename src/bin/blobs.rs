@@ -1,10 +1,12 @@
 use ahash::{AHashMap, AHashSet, HashSet, HashSetExt};
 use anyhow::Result;
-use bytemuck::{Pod, Zeroable};
+use deproject::array2d::Array2D;
 use glow::HasContext;
 use glutin::window::Fullscreen;
 use nalgebra::{Point2, Point3, Vector2};
 use rand::{distributions::Uniform, prelude::Distribution, Rng};
+use deproject::Vertex;
+use deproject::fluid::{FluidSim, DensitySim};
 
 const MAX_VERTS: usize = 100_000;
 
@@ -14,7 +16,7 @@ fn main() -> Result<()> {
             let event_loop = glutin::event_loop::EventLoop::new();
             let window_builder = glutin::window::WindowBuilder::new()
                 .with_title("Calibrator")
-                .with_fullscreen(Some(Fullscreen::Borderless(None)))
+                //.with_fullscreen(Some(Fullscreen::Borderless(None)))
                 .with_inner_size(glutin::dpi::LogicalSize::new(1024.0, 768.0));
             let window = glutin::ContextBuilder::new()
                 .with_vsync(true)
@@ -115,6 +117,11 @@ fn main() -> Result<()> {
 
         let mut points = vec![];
 
+        let sim_size = 150;
+        let mut fluid_sim = FluidSim::new(sim_size, sim_size);
+
+        //let mut density_sim = DensitySim::new(sim_size, sim_size);
+
         event_loop.run(move |event, _, control_flow| {
             *control_flow = ControlFlow::Wait;
             match event {
@@ -125,6 +132,7 @@ fn main() -> Result<()> {
                     window.window().request_redraw();
                 }
                 Event::RedrawRequested(_) => {
+                    // Create fake pointcloud 
                     points.clear();
 
                     let (x, y) = cursor_pos;
@@ -137,13 +145,25 @@ fn main() -> Result<()> {
                         points.push(Point2::new(x + dx, y + dy));
                     }
 
+                    // Track points
                     tracker.track(&points);
 
+                    // Step fluid
+                    let (u, v) = fluid_sim.uv_mut();
+                    u[(100, 100)] = 1.;
+                    v[(100, 100)] = 2.;
+                    fluid_sim.step(0.1, 0.0);
+
+                    // Draw lines
                     line_verts.clear();
                     //blob_box_lines(&mut line_verts, &tracker.current);
-                    draw_delta(&mut line_verts, &tracker);
+                    //draw_delta(&mut line_verts, &tracker);
+                    draw_velocity_lines(&mut line_verts, fluid_sim.uv(), 0.5);
+                    dbg!(line_verts.len());
+
                     line_verts.truncate(MAX_VERTS);
 
+                    // Render lines
                     gl.clear(glow::COLOR_BUFFER_BIT);
 
                     gl.bind_buffer(glow::ARRAY_BUFFER, Some(line_buf));
@@ -190,21 +210,6 @@ fn main() -> Result<()> {
     }
 }
 
-#[repr(C)]
-#[derive(Clone, Copy, Debug, Default)]
-pub struct Vertex {
-    pub pos: [f32; 3],
-    pub color: [f32; 3],
-}
-
-unsafe impl Zeroable for Vertex {}
-unsafe impl Pod for Vertex {}
-
-impl Vertex {
-    pub fn new(pos: [f32; 3], color: [f32; 3]) -> Self {
-        Self { pos, color }
-    }
-}
 
 fn fbm(mut rng: impl Rng, a: f32, iters: usize) -> f32 {
     let s = Uniform::new(-a, a);
@@ -420,7 +425,7 @@ fn blob_box_lines(lines: &mut Vec<Vertex>, blob_boxes: &BlobBoxes) {
 }
 
 fn draw_delta(lines: &mut Vec<Vertex>, tracker: &BlobTracker) {
-    let mut push_vert = |pt: Point2<f32>, color: [f32; 3]| {
+    let mut push_vertex = |pt: Point2<f32>, color: [f32; 3]| {
         lines.push(Vertex {
             pos: [pt.x, pt.y, 0.5],
             color,
@@ -429,7 +434,43 @@ fn draw_delta(lines: &mut Vec<Vertex>, tracker: &BlobTracker) {
 
     for (pt, v) in tracker.delta() {
         let pt = pt.cast::<f32>() * tracker.cell_width;
-        push_vert(pt, [0.; 3]);
-        push_vert(pt + *v, [1.; 3]);
+        push_vertex(pt, [0.; 3]);
+        push_vertex(pt + *v, [1.; 3]);
+    }
+}
+
+fn draw_velocity_lines(lines: &mut Vec<Vertex>, (u, v): (&Array2D<f32>, &Array2D<f32>), z: f32) {
+    let mut push_vertex = |pt: Point2<f32>, color: [f32; 3]| {
+        lines.push(Vertex {
+            pos: [pt.x, pt.y, 0.5],
+            color,
+        })
+    };
+
+    let cell_width = 2. / u.width() as f32;
+    let cell_height = 2. / u.height() as f32;
+
+    for i in 0..u.width() {
+        let i_frac = (i as f32 / u.width() as f32) * 2. - 1.;
+        for j in 0..u.height() {
+            let j_frac = (j as f32 / u.height() as f32) * 2. - 1.;
+
+            let u = u[(i, j)];
+            let v = v[(i, j)];
+
+            let speed = (u.powf(2.) + v.powf(2.)).sqrt();
+
+            let color = [speed; 3];
+
+            let tail = Point2::new(
+                i_frac + cell_width / 2.,
+                j_frac + cell_height / 2.,
+            );
+            push_vertex(tail, [0.; 3]);
+
+            let len = cell_height * 2. / speed;
+            let tip = tail + Vector2::new(u, v) * len;
+            push_vertex(tip, [1.; 3]);
+        }
     }
 }
