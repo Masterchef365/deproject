@@ -148,10 +148,13 @@ fn main() -> Result<()> {
                     // Track points
                     tracker.track(&points);
 
+                    // Update fluid
+                    delta_to_fluid(fluid_sim.uv_mut(), &tracker);
+
                     // Step fluid
-                    let (u, v) = fluid_sim.uv_mut();
-                    u[(100, 100)] = 1.;
-                    v[(100, 100)] = 2.;
+                    //let (u, v) = fluid_sim.uv_mut();
+                    //u[(100, 100)] = 10.;
+                    //v[(100, 100)] = 20.;
                     fluid_sim.step(0.1, 0.0);
 
                     // Draw lines
@@ -159,7 +162,6 @@ fn main() -> Result<()> {
                     //blob_box_lines(&mut line_verts, &tracker.current);
                     //draw_delta(&mut line_verts, &tracker);
                     draw_velocity_lines(&mut line_verts, fluid_sim.uv(), 0.5);
-                    dbg!(line_verts.len());
 
                     line_verts.truncate(MAX_VERTS);
 
@@ -460,7 +462,7 @@ fn draw_velocity_lines(lines: &mut Vec<Vertex>, (u, v): (&Array2D<f32>, &Array2D
 
             let speed = (u.powf(2.) + v.powf(2.)).sqrt();
 
-            let color = [speed; 3];
+            let color = [speed * 80.; 3];
 
             let tail = Point2::new(
                 i_frac + cell_width / 2.,
@@ -470,7 +472,21 @@ fn draw_velocity_lines(lines: &mut Vec<Vertex>, (u, v): (&Array2D<f32>, &Array2D
 
             let len = cell_height * 2. / speed;
             let tip = tail + Vector2::new(u, v) * len;
-            push_vertex(tip, [1.; 3]);
+            push_vertex(tip, color);
         }
+    }
+}
+
+fn delta_to_fluid((u, v): (&mut Array2D<f32>, &mut Array2D<f32>), tracker: &BlobTracker) {
+    let w = u.width() as f32;
+    let h = u.height() as f32;
+
+    for (pt, vt) in tracker.delta() {
+        let pt = (pt.cast::<f32>() * tracker.cell_width) / 2. + Vector2::from_element(0.5);
+        let i = (pt.x * w).clamp(0., w-1.) as usize;
+        let j = (pt.y * h).clamp(0., h-1.) as usize;
+
+        u[(i, j)] += vt.x;
+        v[(i, j)] += vt.y;
     }
 }
