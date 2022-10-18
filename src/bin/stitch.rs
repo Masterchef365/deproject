@@ -5,7 +5,6 @@ use deproject::{pointcloud, projector::*, Image};
 use glow::HasContext;
 use glutin::window::Fullscreen;
 use nalgebra::Point3;
-use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -29,16 +28,15 @@ fn main() -> Result<()> {
     let root_path: PathBuf = args.next().expect("Requires root path").into();
 
     let model_path = root_path.join("matrix.csv");
-    let model = load_model(&model_path)?;
+    let model = load_projector_model(&model_path)?;
 
     let plane_path = root_path.join("plane.csv");
     let plane = Plane::read(File::open(plane_path)?)?;
 
     // Open camera
     // Check for depth or color-compatible devices.
-    let queried_devices = HashSet::new(); // Query any devices
     let context = Context::new()?;
-    let devices = context.query_devices(queried_devices);
+    let devices = context.query_devices(Default::default());
     ensure!(!devices.is_empty(), "No devices found");
 
     let device = &devices[0];

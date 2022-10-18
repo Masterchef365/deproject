@@ -16,7 +16,7 @@ pub fn deproject(model: &ProjectorModel, [x, y, z]: [f32; 3]) -> [f32; 3] {
     [u / w_u, v / w_v, w_u]
 }
 
-pub fn load_model(path: &Path) -> Result<ProjectorModel> {
+pub fn load_projector_model(path: &Path) -> Result<ProjectorModel> {
     let s = std::fs::read_to_string(path)?;
     let mut v = [[0.0f32; 8]; 2];
     for (line, row) in s.lines().zip(&mut v) {
