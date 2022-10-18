@@ -1,16 +1,31 @@
 use ahash::{AHashMap, AHashSet, HashSet, HashSetExt};
 use anyhow::Result;
 use deproject::array2d::Array2D;
+use deproject::fluid::{DensitySim, FluidSim};
+use deproject::plane::Plane;
+use deproject::projector::load_projector_model;
+use deproject::Vertex;
 use glow::HasContext;
 use glutin::window::Fullscreen;
-use nalgebra::{Point2, Point3, Vector2};
+use nalgebra::{Matrix4, Point2, Point3, Vector2};
 use rand::{distributions::Uniform, prelude::Distribution, Rng};
-use deproject::Vertex;
-use deproject::fluid::{FluidSim, DensitySim};
+use std::fs::File;
+use std::path::PathBuf;
 
 const MAX_VERTS: usize = 100_000;
 
 fn main() -> Result<()> {
+    // Parse args
+    let mut args = std::env::args().skip(1);
+    let root_path: PathBuf = args.next().expect("Requires root path").into();
+
+    // Load calibration
+    let model_path = root_path.join("matrix.csv");
+    let projector_model = load_projector_model(&model_path)?;
+
+    let plane_path = root_path.join("plane.csv");
+    let plane = Plane::read(File::open(plane_path)?)?;
+
     unsafe {
         let (gl, shader_version, window, event_loop) = {
             let event_loop = glutin::event_loop::EventLoop::new();
@@ -31,7 +46,7 @@ fn main() -> Result<()> {
 
         let program = gl.create_program().expect("Cannot create program");
 
-        let vertex_shader_source = include_str!("shaders/default.vert");
+        let vertex_shader_source = include_str!("shaders/project.vert");
         let fragment_shader_source = include_str!("shaders/default.frag");
 
         let shader_sources = [
@@ -122,6 +137,13 @@ fn main() -> Result<()> {
 
         let mut parts = Floaters::new(10_000);
 
+        // Upload projector matrix
+        gl.uniform_matrix_4_f32_slice(
+            gl.get_uniform_location(program, "u_projector").as_ref(),
+            true,
+            bytemuck::cast_slice(&projector_model),
+        );
+
         //let mut density_sim = DensitySim::new(sim_size, sim_size);
 
         event_loop.run(move |event, _, control_flow| {
@@ -134,7 +156,7 @@ fn main() -> Result<()> {
                     window.window().request_redraw();
                 }
                 Event::RedrawRequested(_) => {
-                    // Create fake pointcloud 
+                    // Create fake pointcloud
                     points.clear();
 
                     let (x, y) = cursor_pos;
@@ -168,6 +190,11 @@ fn main() -> Result<()> {
                     parts.draw(&mut line_verts);
 
                     line_verts.truncate(MAX_VERTS);
+
+                    // Transform line vertices from plane space into camera space  
+                    for v in &mut line_verts {
+                        v.pos = *plane.from_planespace(Point3::from(v.pos)).coords.as_ref();
+                    }
 
                     // Render lines
                     gl.clear(glow::COLOR_BUFFER_BIT);
@@ -215,7 +242,6 @@ fn main() -> Result<()> {
         });
     }
 }
-
 
 fn fbm(mut rng: impl Rng, a: f32, iters: usize) -> f32 {
     let s = Uniform::new(-a, a);
@@ -468,10 +494,7 @@ fn draw_velocity_lines(lines: &mut Vec<Vertex>, (u, v): (&Array2D<f32>, &Array2D
 
             let color = [speed * 80.; 3];
 
-            let tail = Point2::new(
-                i_frac + cell_width / 2.,
-                j_frac + cell_height / 2.,
-            );
+            let tail = Point2::new(i_frac + cell_width / 2., j_frac + cell_height / 2.);
             push_vertex(tail, [0.; 3]);
 
             let len = cell_height * 2. / speed;
@@ -487,8 +510,8 @@ fn delta_to_fluid((u, v): (&mut Array2D<f32>, &mut Array2D<f32>), tracker: &Blob
 
     for (pt, vt) in tracker.delta() {
         let pt = (pt.cast::<f32>() * tracker.cell_width) / 2. + Vector2::from_element(0.5);
-        let i = (pt.x * w).clamp(0., w-1.) as usize;
-        let j = (pt.y * h).clamp(0., h-1.) as usize;
+        let i = (pt.x * w).clamp(0., w - 1.) as usize;
+        let j = (pt.y * h).clamp(0., h - 1.) as usize;
 
         u[(i, j)] += vt.x;
         v[(i, j)] += vt.y;
@@ -527,20 +550,16 @@ impl Floaters {
 
             if alive {
                 let pt = part.cast::<f32>() / 2. + Vector2::from_element(0.5);
-                let i = (pt.x * w).clamp(0., w-1.) as usize;
-                let j = (pt.y * h).clamp(0., h-1.) as usize;
-                let uv = Vector2::new(u[(i,j)], v[(i,j)]);
+                let i = (pt.x * w).clamp(0., w - 1.) as usize;
+                let j = (pt.y * h).clamp(0., h - 1.) as usize;
+                let uv = Vector2::new(u[(i, j)], v[(i, j)]);
                 *part = last + uv * dt;
             } else {
-                *part = Point2::new(
-                    unif.sample(&mut rng),
-                    unif.sample(&mut rng),
-                );
+                *part = Point2::new(unif.sample(&mut rng), unif.sample(&mut rng));
             }
 
             *mask = alive;
         }
-
     }
 
     pub fn draw(&self, lines: &mut Vec<Vertex>) {
@@ -551,12 +570,11 @@ impl Floaters {
             })
         };
 
-
         for ((part, last), mask) in self.parts.iter().zip(&self.last).zip(&self.mask) {
             if *mask {
                 let d = part - last;
                 push_vertex(*last, [1.; 3]);
-                push_vertex(*part + d*5., [1.; 3]);
+                push_vertex(*part + d * 5., [1.; 3]);
             }
         }
     }
