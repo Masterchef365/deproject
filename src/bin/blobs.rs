@@ -111,7 +111,7 @@ fn main() -> Result<()> {
 
         let mut cursor_pos = (0., 0.);
 
-        let mut tracker = BlobTracker::new(0.005, 40*40, 99999);
+        let mut tracker = BlobTracker::new(0.01, 20 * 20, i64::MAX);
 
         let mut points = vec![];
 
@@ -129,9 +129,9 @@ fn main() -> Result<()> {
 
                     let (x, y) = cursor_pos;
                     let mut rng = rand::thread_rng();
-                    let v = 0.2;
+                    let v = 0.1;
                     let k = 10;
-                    for _ in 0..10000 {
+                    for _ in 0..1000 {
                         let dx = fbm(&mut rng, v, k);
                         let dy = fbm(&mut rng, v, k);
                         points.push(Point2::new(x + dx, y + dy));
@@ -140,7 +140,8 @@ fn main() -> Result<()> {
                     tracker.track(&points);
 
                     line_verts.clear();
-                    blob_box_lines(&mut line_verts, &tracker.current);
+                    //blob_box_lines(&mut line_verts, &tracker.current);
+                    draw_delta(&mut line_verts, &tracker);
                     line_verts.truncate(MAX_VERTS);
 
                     gl.clear(glow::COLOR_BUFFER_BIT);
@@ -218,15 +219,23 @@ fn fbm(mut rng: impl Rng, a: f32, iters: usize) -> f32 {
 struct BlobTracker {
     current: BlobBoxes,
     last: BlobBoxes,
+    cell_width: f32,
+    delta: AHashMap<Point2<i32>, Vector2<f32>>,
 }
 
 impl BlobTracker {
     pub fn new(cell_width: f32, min_blob_area: i64, max_blob_area: i64) -> Self {
         let bb = || BlobBoxes::new(cell_width, min_blob_area, max_blob_area);
         Self {
+            cell_width,
             current: bb(),
             last: bb(),
+            delta: Default::default(),
         }
+    }
+
+    pub fn delta(&self) -> &AHashMap<Point2<i32>, Vector2<f32>> {
+        &self.delta
     }
 
     /// Returns (position, vector delta) for each point that should move
@@ -234,6 +243,28 @@ impl BlobTracker {
         // -> Vec<(Point2<i32>, Vector2<f32>)> {
         std::mem::swap(&mut self.current, &mut self.last);
         self.current.insert(points);
+        self.compute_delta();
+    }
+
+    fn compute_delta(&mut self) {
+        self.delta.clear();
+        for last in &self.last.bounds {
+            for current in &self.current.bounds {
+                if last.intersects(&current) {
+                    let diff = current.center() - last.center();
+                    let diff = diff.cast::<f32>() * self.cell_width;
+
+                    for rect in [last, current] {
+                        for x in rect.min.x..rect.max.x {
+                            for y in rect.min.y..rect.max.y {
+                                let pt = Point2::new(x, y);
+                                self.delta.insert(pt, diff);
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -313,6 +344,7 @@ impl BlobBoxes {
     }
 }
 
+#[derive(Copy, Clone, Debug)]
 struct Rect2 {
     min: Point2<i32>,
     max: Point2<i32>,
@@ -335,6 +367,17 @@ impl Rect2 {
         let s = self.max - self.min;
         let s = s.cast::<i64>();
         s.x * s.y
+    }
+
+    pub fn center(&self) -> Point2<i32> {
+        self.min + (self.max - self.min) / 2
+    }
+
+    pub fn intersects(&self, other: &Self) -> bool {
+        !(self.max.x < other.min.x
+            || other.max.x < self.min.x
+            || self.max.y < other.min.y
+            || other.max.y < self.min.y)
     }
 }
 
@@ -373,5 +416,20 @@ fn blob_box_lines(lines: &mut Vec<Vertex>, blob_boxes: &BlobBoxes) {
 
     for rect in &blob_boxes.bounds {
         draw_box(rect.min, rect.max, [1., 1., 0.]);
+    }
+}
+
+fn draw_delta(lines: &mut Vec<Vertex>, tracker: &BlobTracker) {
+    let mut push_vert = |pt: Point2<f32>, color: [f32; 3]| {
+        lines.push(Vertex {
+            pos: [pt.x, pt.y, 0.5],
+            color,
+        })
+    };
+
+    for (pt, v) in tracker.delta() {
+        let pt = pt.cast::<f32>() * tracker.cell_width;
+        push_vert(pt, [0.; 3]);
+        push_vert(pt + *v, [1.; 3]);
     }
 }
