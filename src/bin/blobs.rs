@@ -120,6 +120,8 @@ fn main() -> Result<()> {
         let sim_size = 150;
         let mut fluid_sim = FluidSim::new(sim_size, sim_size);
 
+        let mut parts = Floaters::new(10_000);
+
         //let mut density_sim = DensitySim::new(sim_size, sim_size);
 
         event_loop.run(move |event, _, control_flow| {
@@ -152,16 +154,18 @@ fn main() -> Result<()> {
                     delta_to_fluid(fluid_sim.uv_mut(), &tracker);
 
                     // Step fluid
-                    //let (u, v) = fluid_sim.uv_mut();
-                    //u[(100, 100)] = 10.;
-                    //v[(100, 100)] = 20.;
-                    fluid_sim.step(0.1, 0.0);
+                    let dt = 0.1;
+                    fluid_sim.step(dt, 0.0);
+
+                    // Update particles
+                    parts.step(fluid_sim.uv(), dt);
 
                     // Draw lines
                     line_verts.clear();
-                    //blob_box_lines(&mut line_verts, &tracker.current);
+                    blob_box_lines(&mut line_verts, &tracker.current);
                     //draw_delta(&mut line_verts, &tracker);
-                    draw_velocity_lines(&mut line_verts, fluid_sim.uv(), 0.5);
+                    //draw_velocity_lines(&mut line_verts, fluid_sim.uv(), 0.5);
+                    parts.draw(&mut line_verts);
 
                     line_verts.truncate(MAX_VERTS);
 
@@ -488,5 +492,71 @@ fn delta_to_fluid((u, v): (&mut Array2D<f32>, &mut Array2D<f32>), tracker: &Blob
 
         u[(i, j)] += vt.x;
         v[(i, j)] += vt.y;
+    }
+}
+
+struct Floaters {
+    parts: Vec<Point2<f32>>,
+    last: Vec<Point2<f32>>,
+    mask: Vec<bool>,
+}
+
+impl Floaters {
+    pub fn new(n: usize) -> Self {
+        let parts = vec![Point2::new(-10., -10.); n];
+        let last = parts.clone();
+        let mask = vec![false; n];
+
+        Self { parts, last, mask }
+    }
+
+    pub fn step(&mut self, (u, v): (&Array2D<f32>, &Array2D<f32>), dt: f32) {
+        std::mem::swap(&mut self.parts, &mut self.last);
+
+        let mut rng = rand::thread_rng();
+        let unif = Uniform::new(-1., 1.);
+
+        let kill_rate = 0.0001;
+
+        let w = u.width() as f32;
+        let h = u.height() as f32;
+        for ((part, last), mask) in self.parts.iter_mut().zip(&self.last).zip(&mut self.mask) {
+            let in_bounds = part.x >= -1. && part.x <= 1. && part.y >= -1. && part.y <= 1.;
+
+            let alive = in_bounds && rng.gen_bool(1. - kill_rate);
+
+            if alive {
+                let pt = part.cast::<f32>() / 2. + Vector2::from_element(0.5);
+                let i = (pt.x * w).clamp(0., w-1.) as usize;
+                let j = (pt.y * h).clamp(0., h-1.) as usize;
+                let uv = Vector2::new(u[(i,j)], v[(i,j)]);
+                *part = last + uv * dt;
+            } else {
+                *part = Point2::new(
+                    unif.sample(&mut rng),
+                    unif.sample(&mut rng),
+                );
+            }
+
+            *mask = alive;
+        }
+
+    }
+
+    pub fn draw(&self, lines: &mut Vec<Vertex>) {
+        let mut push_vertex = |pt: Point2<f32>, color: [f32; 3]| {
+            lines.push(Vertex {
+                pos: [pt.x, pt.y, 0.5],
+                color,
+            })
+        };
+
+
+        for ((part, last), mask) in self.parts.iter().zip(&self.last).zip(&self.mask) {
+            if *mask {
+                push_vertex(*last, [1.; 3]);
+                push_vertex(*part, [1.; 3]);
+            }
+        }
     }
 }
