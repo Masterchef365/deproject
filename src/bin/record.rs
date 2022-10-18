@@ -25,7 +25,27 @@ use anyhow::{ensure, Ok, Result};
 use deproject::project::align_images;
 
 use clap::Parser;
-use deproject::{record_samples, PatternSample, RecordArgs, Rs2IntrinsicsSerde};
+use deproject::{PatternSample, Rs2IntrinsicsSerde};
+
+#[derive(Parser, Debug)]
+#[clap(author, version, about, long_about = None)]
+pub struct RecordArgs {
+    /// Name of record
+    #[clap(short, long, value_parser, default_value = "default")]
+    pub name: String,
+
+    /// Maximum stripe granularity
+    #[clap(short, long, value_parser, default_value_t = 10)]
+    pub max_steps: usize,
+
+    /// Number of samples
+    #[clap(short, long, value_parser, default_value_t = 20)]
+    pub samples: usize,
+
+    /// Do not fullscreen
+    #[clap(short = 'f', long, value_parser)]
+    pub no_fullscreen: bool,
+}
 
 fn pattern_to_param(pat: &PatternSample) -> [f32; 3] {
     [
@@ -323,4 +343,25 @@ fn main() -> Result<()> {
             }
         });
     }
+}
+
+pub fn record_samples(args: &RecordArgs) -> Vec<Vec<PatternSample>> {
+    let mut pat = vec![];
+    for orient in [true, false] {
+        for step in 0..args.max_steps {
+            for color in [true, false] {
+                let mut set = vec![];
+                for idx in 0..args.samples {
+                    set.push(PatternSample {
+                        step,
+                        orient,
+                        sign: color,
+                        idx,
+                    });
+                }
+                pat.push(set);
+            }
+        }
+    }
+    pat
 }

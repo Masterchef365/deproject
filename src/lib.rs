@@ -13,31 +13,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use clap::Parser;
-
 use crate::project::rs2_deproject_pixel_to_point;
 pub mod project;
-
-/// Simple program to greet a person
-#[derive(Parser, Debug)]
-#[clap(author, version, about, long_about = None)]
-pub struct RecordArgs {
-    /// Name of record
-    #[clap(short, long, value_parser, default_value = "default")]
-    pub name: String,
-
-    /// Maximum stripe granularity
-    #[clap(short, long, value_parser, default_value_t = 10)]
-    pub max_steps: usize,
-
-    /// Number of samples
-    #[clap(short, long, value_parser, default_value_t = 20)]
-    pub samples: usize,
-
-    /// Do not fullscreen
-    #[clap(short = 'f', long, value_parser)]
-    pub no_fullscreen: bool,
-}
 
 #[derive(Clone, Copy, Debug)]
 pub struct PatternSample {
@@ -93,26 +70,6 @@ impl FromStr for PatternSample {
     }
 }
 
-pub fn record_samples(args: &RecordArgs) -> Vec<Vec<PatternSample>> {
-    let mut pat = vec![];
-    for orient in [true, false] {
-        for step in 0..args.max_steps {
-            for color in [true, false] {
-                let mut set = vec![];
-                for idx in 0..args.samples {
-                    set.push(PatternSample {
-                        step,
-                        orient,
-                        sign: color,
-                        idx,
-                    });
-                }
-                pat.push(set);
-            }
-        }
-    }
-    pat
-}
 
 /// /step/idx/[false, true]
 pub type SampleSet = Vec<Vec<Vec<SamplePaths>>>;
