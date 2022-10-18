@@ -111,7 +111,7 @@ fn main() -> Result<()> {
 
         let mut cursor_pos = (0., 0.);
 
-        let mut tracker = BlobTracker::new(0.01, 0, 99999);
+        let mut tracker = BlobTracker::new(0.01, 4*4, 99999);
 
         let mut points = vec![];
 
@@ -131,7 +131,7 @@ fn main() -> Result<()> {
                     let mut rng = rand::thread_rng();
                     let v = 0.1;
                     let k = 10;
-                    for _ in 0..100 {
+                    for _ in 0..1000 {
                         let dx = fbm(&mut rng, v, k);
                         let dy = fbm(&mut rng, v, k);
                         points.push(Point2::new(x + dx, y + dy));
@@ -261,7 +261,7 @@ impl BlobBoxes {
     pub fn insert(&mut self, points: &[Point2<f32>]) {
         self.clear();
         self.quantize(points);
-        //self.find_blobs();
+        self.find_blobs();
     }
 
     fn clear(&mut self) {
@@ -285,6 +285,7 @@ impl BlobBoxes {
         self.bounds.clear();
 
         while let Some(&seed) = self.tmp.keys().next() {
+            let (seed, _count) = self.tmp.remove_entry(&seed).unwrap();
             search_buf.push(seed);
             let mut bbox = Rect2::new(seed);
 
@@ -368,5 +369,9 @@ fn blob_box_lines(lines: &mut Vec<Vertex>, blob_boxes: &BlobBoxes) {
 
     for (&tl, _) in &blob_boxes.boxes {
         draw_box(tl, tl, [1., 0., 0.]);
+    }
+
+    for rect in &blob_boxes.bounds {
+        draw_box(rect.min, rect.max, [1., 1., 0.]);
     }
 }
