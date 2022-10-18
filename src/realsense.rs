@@ -210,7 +210,6 @@ pub fn align_images(
     for depth_y in 0..depth_intrin.height() {
         //let mut depth_pixel_index = depth_y * depth_intrin.width();
         for depth_x in 0..depth_intrin.width() {
-
             let depth_pixel_index = depth_y * depth_width + depth_x;
 
             // Skip over depth pixels with the value of zero, we have no depth data so we will not write anything into our aligned images

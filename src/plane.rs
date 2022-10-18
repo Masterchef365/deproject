@@ -1,7 +1,7 @@
 use std::io::{Read, Write};
 
 use anyhow::Result;
-use nalgebra::{Point3, Vector3, Matrix4};
+use nalgebra::{Point3, Vector3};
 use rand::seq::SliceRandom;
 
 #[derive(Default, Copy, Clone)]
@@ -23,11 +23,7 @@ impl Plane {
 
     pub fn to_planespace(&self, point: Point3<f32>) -> Point3<f32> {
         let v = point - self.origin;
-        Point3::new(
-            self.x.dot(&v),
-            self.y.dot(&v),
-            self.z.dot(&v),
-        )
+        Point3::new(self.x.dot(&v), self.y.dot(&v), self.z.dot(&v))
     }
 
     pub fn from_planespace(&self, point: Point3<f32>) -> Point3<f32> {

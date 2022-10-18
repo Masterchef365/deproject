@@ -1,26 +1,25 @@
-use anyhow::{ensure, Ok, Result};
+use anyhow::{ensure, Result};
 use bytemuck::{Pod, Zeroable};
 use deproject::plane::Plane;
-use deproject::{pointcloud, Image, projector::*};
+use deproject::{pointcloud, projector::*, Image};
 use glow::HasContext;
 use glutin::window::Fullscreen;
 use nalgebra::Point3;
 use std::collections::HashSet;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::Duration;
 
-use realsense_rust::kind::Rs2Option;
 use realsense_rust::{
     config::Config,
     context::Context,
+    frame::DepthFrame,
     frame::PixelKind,
-    frame::{ColorFrame, DepthFrame},
     kind::{Rs2CameraInfo, Rs2Format, Rs2StreamKind},
     pipeline::InactivePipeline,
 };
 use std::fs::File;
 
-fn to_gl_space([x, y, z]: [f32; 3]) -> [f32; 3] {
+fn to_gl_space([x, y, _z]: [f32; 3]) -> [f32; 3] {
     [-(y * 2. - 1.), -(x * 2. - 1.), 0.5]
 }
 

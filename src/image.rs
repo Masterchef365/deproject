@@ -1,7 +1,7 @@
 use anyhow::Result;
+use png::{BitDepth, ColorType};
 use std::fs::File;
 use std::io::BufWriter;
-use png::{BitDepth, ColorType};
 use std::path::Path;
 
 pub struct Image<T> {

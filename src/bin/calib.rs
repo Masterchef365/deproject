@@ -1,18 +1,14 @@
 use anyhow::{Context, Ok, Result};
-use deproject::{realsense::*, image::*, pattern::*};
-use nalgebra::{
-    DMatrix, DVector, Matrix2x4, Matrix4, Matrix4x2, OMatrix, Point3, Vector2, Vector3, Vector4,
-    SVD,
-};
-use rand::prelude::*;
+use deproject::plane::ransac_plane;
+use deproject::pointcloud;
+use deproject::{image::*, pattern::*, realsense::*};
+use nalgebra::Point3;
 use realsense_rust::base::Rs2Intrinsics;
 use std::{
     fs::File,
-    io::{self, BufWriter, Write},
+    io::{BufWriter, Write},
     path::{Path, PathBuf},
 };
-use deproject::plane::{Plane, ransac_plane};
-use deproject::pointcloud;
 
 fn main() -> Result<()> {
     let mut args = std::env::args().skip(1);
@@ -60,10 +56,7 @@ fn main() -> Result<()> {
 
     write_pcld(path, &pcld, &pcld_xy)?;
 
-    let xyz: Vec<Point3<f32>> = pcld
-        .into_iter()
-        .map(Point3::from)
-        .collect();
+    let xyz: Vec<Point3<f32>> = pcld.into_iter().map(Point3::from).collect();
 
     let plane = ransac_plane(&xyz, 1000, 0.5 / 100.);
 
@@ -156,66 +149,6 @@ fn best_model(
 }
 */
 
-fn model_mse(model: &Model, pcld: &[[f32; 3]], xy: &[[f32; 2]]) -> f32 {
-    let mut mse = 0.;
-    for (&[x, y, z], &[u, v]) in pcld.iter().zip(xy) {
-        let uv = Vector2::new(u, v);
-        let uv_pred = f_model(&model, Vector3::new(x, y, z));
-
-        mse += (uv - uv_pred).norm_squared();
-    }
-
-    mse /= pcld.len() as f32;
-
-    mse
-}
-
-type Model = [DVector<f32>; 2];
-
-fn f_model(model: &Model, pt: Vector3<f32>) -> Vector2<f32> {
-    let homo = pt.insert_row(3, 1.);
-    let mut xy = [0.; 2];
-
-    for i in 0..2 {
-        let a = model[i].transpose().columns(0, 4) * homo;
-        let b = model[i].transpose().columns(4, 4) * homo;
-
-        xy[i] = a.as_ref()[0] / b.as_ref()[0];
-    }
-
-    Vector2::from(xy)
-}
-
-fn create_model(pcld: &[[f32; 3]], uv: &[[f32; 2]]) -> Option<Model> {
-    let mut vectors = [DVector::zeros(0), DVector::zeros(0)];
-
-    for uvi in 0..2 {
-        // Column-major data
-        let mut data = vec![];
-        for (xyz, uv) in pcld.iter().zip(uv) {
-            let u = uv[uvi];
-            let [x, y, z] = *xyz;
-            // Homogenous coords
-            data.extend_from_slice(&[x, y, z, 1., -u * x, -u * y, -u * z, -u]);
-        }
-
-        let x = DMatrix::from_column_slice(8, pcld.len(), &data);
-
-        // SVD in search of null space
-        let svd = SVD::new(x.clone(), false, true);
-        let v = svd.v_t.unwrap();
-        let vector = v.column(v.ncols() - 1);
-
-        println!("{}", svd.singular_values);
-
-        println!("{}", vector);
-
-        vectors[uvi] = vector.into_owned();
-    }
-
-    Some(vectors)
-}
-
 fn write_pcld(path: impl AsRef<Path>, pcld: &[[f32; 3]], xy: &[[f32; 2]]) -> Result<()> {
     let f = std::fs::File::create(path)?;
     let mut f = BufWriter::new(f);
@@ -248,7 +181,6 @@ fn mask(paths: &Paths, idx: usize, snr_thresh: f32) -> Result<Image<bool>> {
     }
 
     let diff_avg = diff_sum.map(|d| [d[0] / total as f32]);
-
 
     // Calculate average deviation from average
     let mut diff_dev_sum = load_color_png(&paths.horiz[0][idx][0].color)?.map(|_| [0f32]);
@@ -328,19 +260,11 @@ fn diff(a: &Image<f32>, b: &Image<f32>) -> Image<f32> {
     Image::new(data, a.width(), 1)
 }
 
-fn sgncolor(v: f32) -> [u8; 3] {
-    if v > 0. {
-        [1., 0.1, 0.1]
-    } else {
-        [0.1, 0.1, 1.]
-    }
-    .map(|x| ((x * v.abs()).clamp(0., 1.) * 256.) as u8)
-}
-
 fn intensity(rgb: &[u8]) -> f32 {
     (rgb.iter()
         .map(|&x| f32::from(x) / 256.0)
         .map(|x| x * x)
-        .sum::<f32>() / 3.)
+        .sum::<f32>()
+        / 3.)
         .sqrt()
 }

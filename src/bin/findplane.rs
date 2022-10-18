@@ -1,5 +1,5 @@
+use nalgebra::Point3;
 use std::io::{BufRead, Write};
-use nalgebra::{Point3, Vector3};
 use std::path::Path;
 
 use anyhow::{Ok, Result};
@@ -22,12 +22,12 @@ fn main() -> Result<()> {
         let mut v = [0.; 6];
         let pr = plane.proj(pt);
         v[..3].copy_from_slice(pr.coords.as_slice());
-        v[1+3] = 1.;
+        v[1 + 3] = 1.;
         xyzrgb.push(v);
 
         let mut v = [0.; 6];
         v[..3].copy_from_slice(pt.coords.as_slice());
-        v[0+3] = 1.;
+        v[0 + 3] = 1.;
         xyzrgb.push(v);
     }
 
@@ -74,4 +74,3 @@ fn write_csv<const N: usize>(path: &Path, data: &[[f32; N]]) -> Result<()> {
 
     Ok(())
 }
-

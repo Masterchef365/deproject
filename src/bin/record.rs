@@ -2,15 +2,15 @@ use std::collections::HashSet;
 use std::fs::File;
 use std::io::BufWriter;
 use std::path::PathBuf;
-use std::str::FromStr;
+
+use std::sync::mpsc;
 use std::sync::mpsc::{Receiver, Sender};
-use std::sync::{mpsc, Arc, Mutex};
 use std::{path::Path, time::Duration};
 
 use glow::*;
 
 use glutin::window::Fullscreen;
-use realsense_rust::kind::Rs2Option;
+
 use realsense_rust::{
     config::Config,
     context::Context,

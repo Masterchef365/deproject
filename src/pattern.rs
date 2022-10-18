@@ -59,7 +59,6 @@ impl FromStr for PatternSample {
     }
 }
 
-
 /// /step/idx/[false, true]
 pub type SampleSet = Vec<Vec<Vec<SamplePaths>>>;
 
