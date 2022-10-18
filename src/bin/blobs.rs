@@ -111,7 +111,7 @@ fn main() -> Result<()> {
 
         let mut cursor_pos = (0., 0.);
 
-        let mut tracker = BlobTracker::new(0.01, 4*4, 99999);
+        let mut tracker = BlobTracker::new(0.005, 40*40, 99999);
 
         let mut points = vec![];
 
@@ -129,9 +129,9 @@ fn main() -> Result<()> {
 
                     let (x, y) = cursor_pos;
                     let mut rng = rand::thread_rng();
-                    let v = 0.1;
+                    let v = 0.2;
                     let k = 10;
-                    for _ in 0..1000 {
+                    for _ in 0..10000 {
                         let dx = fbm(&mut rng, v, k);
                         let dy = fbm(&mut rng, v, k);
                         points.push(Point2::new(x + dx, y + dy));
