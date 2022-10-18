@@ -162,7 +162,7 @@ fn main() -> Result<()> {
 
                     // Draw lines
                     line_verts.clear();
-                    blob_box_lines(&mut line_verts, &tracker.current);
+                    //blob_box_lines(&mut line_verts, &tracker.current);
                     //draw_delta(&mut line_verts, &tracker);
                     //draw_velocity_lines(&mut line_verts, fluid_sim.uv(), 0.5);
                     parts.draw(&mut line_verts);
@@ -554,8 +554,9 @@ impl Floaters {
 
         for ((part, last), mask) in self.parts.iter().zip(&self.last).zip(&self.mask) {
             if *mask {
+                let d = part - last;
                 push_vertex(*last, [1.; 3]);
-                push_vertex(*part, [1.; 3]);
+                push_vertex(*part + d*5., [1.; 3]);
             }
         }
     }
