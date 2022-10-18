@@ -1,7 +1,7 @@
 use anyhow::{ensure, Ok, Result};
 use bytemuck::{Pod, Zeroable};
 use deproject::plane::Plane;
-use deproject::{pointcloud, MinimalImage};
+use deproject::{pointcloud, Image};
 use glow::HasContext;
 use glutin::window::Fullscreen;
 use nalgebra::Point3;
@@ -226,7 +226,7 @@ fn main() -> Result<()> {
                         })
                         .collect();
 
-                    let depth_image = MinimalImage::new(in_depth_buf, depth_intrinsics.width(), 1);
+                    let depth_image = Image::new(in_depth_buf, depth_intrinsics.width(), 1);
                     let mask = depth_image.map(|_| [true]);
 
                     let pointcloud = pointcloud(&depth_image, &mask, &depth_intrinsics);

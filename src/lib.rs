@@ -1,12 +1,12 @@
 use anyhow::Result;
-use png::{BitDepth, ColorType};
 use realsense_rust::base::Rs2Intrinsics;
 use serde::{Deserialize, Serialize};
-use std::fs::File;
-use std::io::BufWriter;
 use std::str::FromStr;
 
+pub mod image;
 pub mod plane;
+
+pub use image::*;
 
 use std::{
     collections::HashSet,
@@ -184,122 +184,7 @@ impl Paths {
     }
 }
 
-pub fn write_color_png(path: impl AsRef<Path>, image: &MinimalImage<u8>) -> Result<()> {
-    let file = File::create(path)?;
-    let ref mut w = BufWriter::new(file);
 
-    let mut encoder = png::Encoder::new(w, image.width() as _, image.height() as _); // Width is 2 pixels and height is 1.
-    encoder.set_color(png::ColorType::Rgb);
-    encoder.set_depth(png::BitDepth::Eight);
-
-    let mut writer = encoder.write_header()?;
-
-    writer.write_image_data(image.data())?;
-
-    Ok(())
-}
-
-pub struct MinimalImage<T> {
-    pub data: Vec<T>,
-    pub row_size: usize,
-    pub stride: usize,
-}
-
-impl<T> MinimalImage<T> {
-    pub fn new(data: Vec<T>, width: usize, stride: usize) -> Self {
-        Self {
-            data,
-            row_size: width * stride,
-            stride,
-        }
-    }
-
-    pub fn height(&self) -> usize {
-        self.data.len() / self.row_size
-    }
-
-    pub fn width(&self) -> usize {
-        self.row_size / self.stride
-    }
-
-    pub fn data(&self) -> &[T] {
-        &self.data
-    }
-
-    pub fn data_mut(&mut self) -> &mut [T] {
-        &mut self.data
-    }
-
-    pub fn map<U, const N: usize>(&self, f: impl Fn(&[T]) -> [U; N]) -> MinimalImage<U> {
-        let data = self
-            .data()
-            .chunks_exact(self.stride)
-            .map(f)
-            .flatten()
-            .collect();
-        MinimalImage::new(data, self.width(), N)
-    }
-
-    pub fn zip<U, V, const N: usize>(
-        &self,
-        other: &MinimalImage<V>,
-        f: impl Fn(&[T], &[V]) -> [U; N],
-    ) -> MinimalImage<U> {
-        assert_eq!(self.width(), other.width());
-        let data = self
-            .data()
-            .chunks_exact(self.stride)
-            .zip(other.data().chunks_exact(other.stride))
-            .map(|(a, b)| f(a, b))
-            .flatten()
-            .collect();
-        MinimalImage::new(data, self.width(), N)
-    }
-}
-
-pub fn load_color_png(path: impl AsRef<Path>) -> Result<MinimalImage<u8>> {
-    let decoder = png::Decoder::new(File::open(path).unwrap());
-
-    let mut reader = decoder.read_info().unwrap();
-
-    let mut data = vec![0; reader.output_buffer_size()];
-
-    let info = reader.next_frame(&mut data).unwrap();
-
-    assert_eq!(info.bit_depth, BitDepth::Eight);
-    assert_eq!(info.color_type, ColorType::Rgb);
-
-    data.truncate(info.buffer_size());
-
-    Ok(MinimalImage {
-        data,
-        stride: 3,
-        row_size: info.width as usize * 3,
-    })
-}
-
-pub fn load_depth_png(path: impl AsRef<Path>) -> Result<MinimalImage<u16>> {
-    let decoder = png::Decoder::new(File::open(path).unwrap());
-
-    let mut reader = decoder.read_info().unwrap();
-
-    let mut data = vec![0; reader.output_buffer_size()];
-
-    let info = reader.next_frame(&mut data).unwrap();
-
-    assert_eq!(info.bit_depth, BitDepth::Sixteen);
-    assert_eq!(info.color_type, ColorType::Grayscale);
-
-    data.truncate(info.buffer_size());
-
-    let data = bytemuck::cast_slice(&data).to_vec();
-
-    Ok(MinimalImage {
-        data,
-        stride: 1,
-        row_size: info.width as usize * 1,
-    })
-}
 
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub struct Rs2IntrinsicsSerde {
@@ -353,8 +238,8 @@ impl From<realsense_sys::rs2_intrinsics> for Rs2IntrinsicsSerde {
 
 pub fn pointcloud(
     //xy: &MinimalImage<f32>,
-    depth: &MinimalImage<u16>,
-    mask: &MinimalImage<bool>,
+    depth: &Image<u16>,
+    mask: &Image<bool>,
     intrinsics: &Rs2Intrinsics,
 ) -> Vec<[f32; 3]> {
     assert_eq!(mask.width(), depth.width());
@@ -364,8 +249,8 @@ pub fn pointcloud(
 
     for (row_idx, (depth_row, mask_row)) in depth
         .data()
-        .chunks_exact(depth.row_size)
-        .zip(mask.data().chunks_exact(mask.row_size))
+        .chunks_exact(depth.row_size())
+        .zip(mask.data().chunks_exact(mask.row_size()))
         .enumerate()
     {
         for (col_idx, (depth, mask)) in depth_row.iter().zip(mask_row).enumerate() {

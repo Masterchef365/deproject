@@ -73,7 +73,7 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn avg_depth(path: &Path, max_iters: usize) -> Result<MinimalImage<u16>> {
+fn avg_depth(path: &Path, max_iters: usize) -> Result<Image<u16>> {
     let mut accum = load_depth_png(path.join(format!(
             "{}_depth.png",
             PatternSample {
@@ -226,7 +226,7 @@ fn write_pcld(path: impl AsRef<Path>, pcld: &[[f32; 3]], xy: &[[f32; 2]]) -> Res
     Ok(())
 }
 
-fn mask(paths: &Paths, idx: usize, snr_thresh: f32) -> Result<MinimalImage<bool>> {
+fn mask(paths: &Paths, idx: usize, snr_thresh: f32) -> Result<Image<bool>> {
     // Calculate average difference per pixel
     let mut diff_sum = load_color_png(&paths.horiz[0][idx][0].color)?.map(|_| [0f32]);
     let mut total = 0.;
@@ -273,7 +273,7 @@ fn mask(paths: &Paths, idx: usize, snr_thresh: f32) -> Result<MinimalImage<bool>
     Ok(mask)
 }
 
-fn xy_image(paths: &Paths, idx: usize) -> Result<MinimalImage<f32>> {
+fn xy_image(paths: &Paths, idx: usize) -> Result<Image<f32>> {
     let prep = prepare_data(&paths.horiz, idx)?;
     let x = binary_difftree(&prep);
 
@@ -285,7 +285,7 @@ fn xy_image(paths: &Paths, idx: usize) -> Result<MinimalImage<f32>> {
     Ok(xy)
 }
 
-fn prepare_data(paths: &SampleSet, idx: usize) -> Result<Vec<MinimalImage<bool>>> {
+fn prepare_data(paths: &SampleSet, idx: usize) -> Result<Vec<Image<bool>>> {
     let mut levels = vec![];
     for set in &paths[1..] {
         let sample = &set[idx];
@@ -303,7 +303,7 @@ fn prepare_data(paths: &SampleSet, idx: usize) -> Result<Vec<MinimalImage<bool>>
     Ok(levels)
 }
 
-fn binary_difftree(smp: &[MinimalImage<bool>]) -> MinimalImage<f32> {
+fn binary_difftree(smp: &[Image<bool>]) -> Image<f32> {
     let mut img = smp[0].map(|_| [0.]);
 
     let mut int = 1.;
@@ -322,13 +322,9 @@ fn binary_difftree(smp: &[MinimalImage<bool>]) -> MinimalImage<f32> {
     img
 }
 
-fn diff(a: &MinimalImage<f32>, b: &MinimalImage<f32>) -> MinimalImage<f32> {
+fn diff(a: &Image<f32>, b: &Image<f32>) -> Image<f32> {
     let data = a.data().iter().zip(b.data()).map(|(a, b)| a - b).collect();
-    MinimalImage {
-        data,
-        row_size: a.width(),
-        stride: 1,
-    }
+    Image::new(data, a.width(), 1)
 }
 
 fn sgncolor(v: f32) -> [u8; 3] {
