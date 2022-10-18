@@ -52,16 +52,28 @@ fn main() -> Result<()> {
         .map(|(xy, _)| [xy[0], xy[1]])
         .collect();
 
+
+    let xyz: Vec<Point3<f32>> = pcld.iter().copied().map(Point3::from).collect();
+
+    let plane = ransac_plane(&xyz, 1000, 0.5 / 100., 1.0);
+
+    let mut out_xyz = pcld.to_vec();
+    let mut out_uv = pcld_xy.to_vec();
+
+    /*
+    for &pt in &xyz {
+        let mut pt = plane.to_planespace(pt);
+        pt.y = 0.;
+        let in_plane = plane.from_planespace(pt);
+        out_xyz.push(*in_plane.coords.as_ref());
+        out_uv.push([pt.x.abs(), pt.z.abs()]);
+    }
+    */
+
     let path = root_path.join("calib_points.csv");
-
-    write_pcld(path, &pcld, &pcld_xy)?;
-
-    let xyz: Vec<Point3<f32>> = pcld.into_iter().map(Point3::from).collect();
-
-    let plane = ransac_plane(&xyz, 1000, 0.5 / 100.);
+    write_pcld(path, &out_xyz, &out_uv)?;
 
     let path = root_path.join("plane.csv");
-
     plane.write(File::create(path)?)?;
 
     Ok(())
