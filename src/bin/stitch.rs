@@ -1,7 +1,7 @@
 use anyhow::{ensure, Ok, Result};
 use bytemuck::{Pod, Zeroable};
 use deproject::plane::Plane;
-use deproject::{pointcloud, Image};
+use deproject::{pointcloud, Image, projector::*};
 use glow::HasContext;
 use glutin::window::Fullscreen;
 use nalgebra::Point3;
@@ -20,40 +20,15 @@ use realsense_rust::{
 };
 use std::fs::File;
 
-type Model = [[f32; 8]; 2];
-
 fn to_gl_space([x, y, z]: [f32; 3]) -> [f32; 3] {
     [-(y * 2. - 1.), -(x * 2. - 1.), 0.5]
 }
 
-fn load_model(path: &Path) -> Result<Model> {
-    let s = std::fs::read_to_string(path)?;
-    let mut v = [[0.0f32; 8]; 2];
-    for (line, row) in s.lines().zip(&mut v) {
-        line.split(',')
-            .zip(row.iter_mut())
-            .for_each(|(v, r)| *r = v.parse().unwrap());
-    }
-
-    Ok(v)
-}
-
-fn deproject(model: &Model, [x, y, z]: [f32; 3]) -> [f32; 3] {
-    let model_u = model[0];
-    let model_v = model[1];
-
-    let w_u = model_u[4] * x + model_u[5] * y + model_u[6] * z + model_u[7];
-    let w_v = model_v[4] * x + model_v[5] * y + model_v[6] * z + model_v[7];
-
-    let u = model_u[0] * x + model_u[1] * y + model_u[2] * z + model_u[3];
-    let v = model_v[0] * x + model_v[1] * y + model_v[2] * z + model_v[3];
-
-    [u / w_u, v / w_v, w_u]
-}
-
 fn main() -> Result<()> {
+    // Parse args
     let mut args = std::env::args().skip(1);
     let root_path: PathBuf = args.next().expect("Requires root path").into();
+
     let model_path = root_path.join("matrix.csv");
     let model = load_model(&model_path)?;
 

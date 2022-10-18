@@ -1,5 +1,5 @@
 use anyhow::{Context, Ok, Result};
-use deproject::{project::rs2_deproject_pixel_to_point, intrinsics::Rs2IntrinsicsSerde, image::*, pattern::*};
+use deproject::{realsense::*, image::*, pattern::*};
 use nalgebra::{
     DMatrix, DVector, Matrix2x4, Matrix4, Matrix4x2, OMatrix, Point3, Vector2, Vector3, Vector4,
     SVD,

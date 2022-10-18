@@ -2,13 +2,13 @@ use realsense_rust::base::Rs2Intrinsics;
 
 pub mod image;
 pub mod plane;
-pub mod intrinsics;
+pub mod realsense;
 
 pub use image::*;
 
-use crate::project::rs2_deproject_pixel_to_point;
-pub mod project;
+use crate::realsense::rs2_deproject_pixel_to_point;
 pub mod pattern;
+pub mod projector;
 
 pub fn pointcloud(
     //xy: &MinimalImage<f32>,
