@@ -1,8 +1,10 @@
+use ahash::{AHashMap, AHashSet, HashSet, HashSetExt};
 use anyhow::Result;
 use bytemuck::{Pod, Zeroable};
 use glow::HasContext;
 use glutin::window::Fullscreen;
-use rand::{Rng, prelude::Distribution, distributions::Uniform};
+use nalgebra::{Point2, Point3, Vector2};
+use rand::{distributions::Uniform, prelude::Distribution, Rng};
 
 const MAX_VERTS: usize = 100_000;
 
@@ -109,6 +111,10 @@ fn main() -> Result<()> {
 
         let mut cursor_pos = (0., 0.);
 
+        let mut tracker = BlobTracker::new(0.01, 0, 99999);
+        
+        let mut points = vec![];
+
         event_loop.run(move |event, _, control_flow| {
             *control_flow = ControlFlow::Wait;
             match event {
@@ -119,7 +125,8 @@ fn main() -> Result<()> {
                     window.window().request_redraw();
                 }
                 Event::RedrawRequested(_) => {
-                    line_verts.clear();
+                    points.clear();
+
                     let (x, y) = cursor_pos;
                     let mut rng = rand::thread_rng();
                     let v = 0.1;
@@ -127,11 +134,14 @@ fn main() -> Result<()> {
                     for _ in 0..100 {
                         let dx = fbm(&mut rng, v, k);
                         let dy = fbm(&mut rng, v, k);
-                        line_verts.push(Vertex {
-                            pos: [x + dx, y + dy, 0.5],
-                            color: [1.; 3],
-                        });
+                        points.push(Point2::new(x + dx, y + dy));
                     }
+
+                    tracker.track(&points);
+
+                    line_verts.clear();
+                    blob_box_lines(&mut line_verts, &tracker.current);
+                    line_verts.truncate(MAX_VERTS);
 
                     gl.clear(glow::COLOR_BUFFER_BIT);
 
@@ -146,7 +156,7 @@ fn main() -> Result<()> {
                     gl.bind_buffer(glow::ARRAY_BUFFER, None);
 
                     gl.bind_vertex_array(Some(line_array));
-                    gl.draw_arrays(glow::POINTS, 0, line_verts.len() as _);
+                    gl.draw_arrays(glow::LINES, 0, line_verts.len() as _);
                     gl.bind_vertex_array(None);
 
                     //gl.uniform_3_f32(loc.as_ref(), x, y, z);
@@ -205,3 +215,155 @@ fn fbm(mut rng: impl Rng, a: f32, iters: usize) -> f32 {
     out
 }
 
+struct BlobTracker {
+    current: BlobBoxes,
+    last: BlobBoxes,
+}
+
+impl BlobTracker {
+    pub fn new(cell_width: f32, min_blob_area: i64, max_blob_area: i64) -> Self {
+        let bb = || BlobBoxes::new(cell_width, min_blob_area, max_blob_area);
+        Self {
+            current: bb(),
+            last: bb(),
+        }
+    }
+
+    /// Returns (position, vector delta) for each point that should move
+    pub fn track(&mut self, points: &[Point2<f32>]) {
+        // -> Vec<(Point2<i32>, Vector2<f32>)> {
+        std::mem::swap(&mut self.current, &mut self.last);
+        self.current.insert(points);
+    }
+}
+
+struct BlobBoxes {
+    cell_width: f32,
+    min_blob_area: i64,
+    max_blob_area: i64,
+    boxes: AHashMap<Point2<i32>, usize>,
+    tmp: AHashMap<Point2<i32>, usize>,
+    bounds: Vec<Rect2>,
+}
+
+impl BlobBoxes {
+    pub fn new(cell_width: f32, min_blob_area: i64, max_blob_area: i64) -> Self {
+        Self {
+            cell_width,
+            min_blob_area,
+            max_blob_area,
+            boxes: Default::default(),
+            tmp: Default::default(),
+            bounds: Default::default(),
+        }
+    }
+
+    pub fn insert(&mut self, points: &[Point2<f32>]) {
+        self.clear();
+        self.quantize(points);
+        //self.find_blobs();
+    }
+
+    fn clear(&mut self) {
+        self.boxes.clear();
+        self.bounds.clear();
+        self.tmp.clear();
+    }
+
+    fn quantize(&mut self, points: &[Point2<f32>]) {
+        for point in points {
+            let key = point / self.cell_width;
+            let key = Point2::new(key.x as i32, key.y as i32);
+            *self.boxes.entry(key).or_insert(0) += 1;
+        }
+    }
+
+    fn find_blobs(&mut self) {
+        let mut search_buf = vec![];
+        self.tmp.clear();
+        self.tmp.extend(self.boxes.iter());
+        self.bounds.clear();
+
+        while let Some(&seed) = self.tmp.keys().next() {
+            search_buf.push(seed);
+            let mut bbox = Rect2::new(seed);
+
+            while let Some(part) = search_buf.pop() {
+                let offsets = [
+                    Vector2::new(1, 0),
+                    Vector2::new(-1, 0),
+                    Vector2::new(0, 1),
+                    Vector2::new(0, -1),
+                ];
+
+                for off in offsets {
+                    let subject = part + off;
+                    if let Some((s, _)) = self.tmp.remove_entry(&subject) {
+                        search_buf.push(s);
+                        bbox.insert(s);
+                    }
+                }
+            }
+
+            if (self.min_blob_area..=self.max_blob_area).contains(&bbox.area()) {
+                self.bounds.push(bbox);
+            }
+        }
+    }
+}
+
+struct Rect2 {
+    min: Point2<i32>,
+    max: Point2<i32>,
+}
+
+impl Rect2 {
+    pub fn new(pt: Point2<i32>) -> Self {
+        Self { min: pt, max: pt }
+    }
+
+    pub fn insert(&mut self, pt: Point2<i32>) {
+        self.min.x = self.min.x.min(pt.x);
+        self.min.y = self.min.y.min(pt.y);
+
+        self.max.x = self.max.x.max(pt.x);
+        self.max.y = self.max.y.max(pt.y);
+    }
+
+    pub fn area(&self) -> i64 {
+        let s = self.max - self.min;
+        let s = s.cast::<i64>();
+        s.x * s.y
+    }
+}
+
+fn blob_box_lines(lines: &mut Vec<Vertex>, blob_boxes: &BlobBoxes) {
+    let mut push_vert = |pt: Point2<f32>, color: [f32; 3]| {
+        lines.push(Vertex {
+            pos: [pt.x, pt.y, 0.5],
+            color,
+        })
+    };
+
+    for (&bbox, _) in &blob_boxes.boxes {
+        let bw = blob_boxes.cell_width;
+        let color = [1., 0., 0.];
+
+        let tl: Point2<f32> = bbox.cast() * blob_boxes.cell_width;
+        let tr = tl + Vector2::new(bw, 0.);
+        let br = tl + Vector2::new(bw, bw);
+        let bl = tl + Vector2::new(0., bw);
+
+        push_vert(tl, color);
+        push_vert(bl, color);
+
+        push_vert(tl, color);
+        push_vert(tr, color);
+
+        push_vert(tr, color);
+        push_vert(br, color);
+
+        push_vert(bl, color);
+        push_vert(br, color);
+    }
+}
