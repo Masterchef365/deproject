@@ -1,5 +1,5 @@
 use anyhow::{Context, Ok, Result};
-use deproject::{project::rs2_deproject_pixel_to_point, *};
+use deproject::{project::rs2_deproject_pixel_to_point, intrinsics::Rs2IntrinsicsSerde, image::*, pattern::*};
 use nalgebra::{
     DMatrix, DVector, Matrix2x4, Matrix4, Matrix4x2, OMatrix, Point3, Vector2, Vector3, Vector4,
     SVD,
@@ -12,6 +12,7 @@ use std::{
     path::{Path, PathBuf},
 };
 use deproject::plane::{Plane, ransac_plane};
+use deproject::pointcloud;
 
 fn main() -> Result<()> {
     let mut args = std::env::args().skip(1);

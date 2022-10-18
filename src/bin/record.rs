@@ -25,7 +25,7 @@ use anyhow::{ensure, Ok, Result};
 use deproject::project::align_images;
 
 use clap::Parser;
-use deproject::{PatternSample, Rs2IntrinsicsSerde};
+use deproject::{pattern::*, intrinsics::Rs2IntrinsicsSerde};
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
