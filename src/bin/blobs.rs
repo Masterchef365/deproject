@@ -2,7 +2,7 @@ use anyhow::Result;
 use bytemuck::{Pod, Zeroable};
 use glow::HasContext;
 use glutin::window::Fullscreen;
-use rand::Rng;
+use rand::{Rng, prelude::Distribution, distributions::Uniform};
 
 const MAX_VERTS: usize = 100_000;
 
@@ -123,9 +123,12 @@ fn main() -> Result<()> {
                     let (x, y) = cursor_pos;
                     let mut rng = rand::thread_rng();
                     let v = 0.1;
-                    for _ in 0..1000 {
+                    let k = 10;
+                    for _ in 0..100 {
+                        let dx = fbm(&mut rng, v, k);
+                        let dy = fbm(&mut rng, v, k);
                         line_verts.push(Vertex {
-                            pos: [x + rng.gen_range(-v..v), y + rng.gen_range(-v..v), 0.5],
+                            pos: [x + dx, y + dy, 0.5],
                             color: [1.; 3],
                         });
                     }
@@ -191,3 +194,14 @@ impl Vertex {
         Self { pos, color }
     }
 }
+
+fn fbm(mut rng: impl Rng, a: f32, iters: usize) -> f32 {
+    let s = Uniform::new(-a, a);
+    let mut out = 0.0;
+    for _ in 0..iters {
+        out /= 2.;
+        out += s.sample(&mut rng);
+    }
+    out
+}
+
