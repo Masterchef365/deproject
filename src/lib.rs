@@ -1,8 +1,11 @@
-use realsense_rust::base::Rs2Intrinsics;
 use bytemuck::{Pod, Zeroable};
+use realsense_rust::{
+    base::Rs2Intrinsics,
+    frame::{DepthFrame, PixelKind},
+};
 
-pub mod fluid;
 pub mod array2d;
+pub mod fluid;
 
 pub mod image;
 pub mod plane;
@@ -47,6 +50,39 @@ pub fn pointcloud(
     }
 
     pcld
+}
+
+pub fn pointcloud_fast(
+    //xy: &MinimalImage<f32>,
+    depth: &DepthFrame,
+    intrinsics: &Rs2Intrinsics,
+    pcld: &mut Vec<[f32; 3]>,
+) {
+    pcld.clear();
+
+    let mut data = depth.iter();
+    for row_idx in 0..depth.height() {
+        for col_idx in 0..depth.width() {
+            let depth = match data.next() {
+                Some(PixelKind::Z16 { depth }) => *depth,
+                _ => unreachable!(),
+            };
+
+            if depth == 0 {
+                continue;
+            }
+
+            let pt = rs2_deproject_pixel_to_point(
+                intrinsics,
+                [col_idx as f32 - 0.5, row_idx as f32 - 0.5],
+                depth as f32,
+            );
+
+            let pt = pt.map(|v| v / 1e3);
+
+            pcld.push([pt[0], -pt[1], pt[2]]);
+        }
+    }
 }
 
 #[repr(C)]

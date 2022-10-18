@@ -1,18 +1,31 @@
 use ahash::{AHashMap, AHashSet, HashSet, HashSetExt};
-use anyhow::Result;
+use anyhow::{ensure, Ok, Result};
 use deproject::array2d::Array2D;
 use deproject::fluid::{DensitySim, FluidSim};
 use deproject::plane::Plane;
 use deproject::projector::load_projector_model;
-use deproject::Vertex;
+use deproject::{pointcloud_fast, Vertex};
 use glow::HasContext;
 use glutin::window::Fullscreen;
 use nalgebra::{Matrix4, Point2, Point3, Vector2};
 use rand::{distributions::Uniform, prelude::Distribution, Rng};
 use std::fs::File;
 use std::path::PathBuf;
+use std::sync::mpsc::{Sender, channel};
+use std::time::Duration;
+
+use realsense_rust::{
+    config::Config,
+    context::Context,
+    frame::DepthFrame,
+    frame::PixelKind,
+    kind::{Rs2CameraInfo, Rs2Format, Rs2StreamKind},
+    pipeline::InactivePipeline,
+};
 
 const MAX_VERTS: usize = 100_000;
+
+const CELL_WIDTH: f32 = 0.01;
 
 fn main() -> Result<()> {
     // Parse args
@@ -25,6 +38,9 @@ fn main() -> Result<()> {
 
     let plane_path = root_path.join("plane.csv");
     let plane = Plane::read(File::open(plane_path)?)?;
+
+    let (tracking_tx, tracking_rx) = channel();
+    std::thread::spawn(move || tracking_thread(tracking_tx, plane).unwrap());
 
     unsafe {
         let (gl, shader_version, window, event_loop) = {
@@ -128,10 +144,6 @@ fn main() -> Result<()> {
 
         let mut cursor_pos = (0., 0.);
 
-        let mut tracker = BlobTracker::new(0.01, 20 * 20, i64::MAX);
-
-        let mut points = vec![];
-
         let sim_size = 150;
         let mut fluid_sim = FluidSim::new(sim_size, sim_size);
 
@@ -157,8 +169,8 @@ fn main() -> Result<()> {
                 }
                 Event::RedrawRequested(_) => {
                     // Create fake pointcloud
+                    /*
                     points.clear();
-
                     let (x, y) = cursor_pos;
                     let mut rng = rand::thread_rng();
                     let v = 0.1;
@@ -171,9 +183,14 @@ fn main() -> Result<()> {
 
                     // Track points
                     tracker.track(&points);
+                    */
+                    line_verts.clear();
 
                     // Update fluid
-                    delta_to_fluid(fluid_sim.uv_mut(), &tracker);
+                    for delta in tracking_rx.try_iter() {
+                        draw_delta(&mut line_verts, &delta, CELL_WIDTH);
+                        delta_to_fluid(fluid_sim.uv_mut(), &delta, CELL_WIDTH);
+                    }
 
                     // Step fluid
                     let dt = 0.1;
@@ -183,15 +200,13 @@ fn main() -> Result<()> {
                     parts.step(fluid_sim.uv(), dt);
 
                     // Draw lines
-                    line_verts.clear();
                     //blob_box_lines(&mut line_verts, &tracker.current);
-                    //draw_delta(&mut line_verts, &tracker);
                     //draw_velocity_lines(&mut line_verts, fluid_sim.uv(), 0.5);
                     parts.draw(&mut line_verts);
 
                     line_verts.truncate(MAX_VERTS);
 
-                    // Transform line vertices from plane space into camera space  
+                    // Transform line vertices from plane space into camera space
                     for v in &mut line_verts {
                         v.pos = *plane.from_planespace(Point3::from(v.pos)).coords.as_ref();
                     }
@@ -243,6 +258,60 @@ fn main() -> Result<()> {
     }
 }
 
+fn tracking_thread(delta: Sender<BlobTrackerDelta>, plane: Plane) -> Result<()> {
+    // Open camera
+    // Check for depth or color-compatible devices.
+    let context = Context::new()?;
+    let devices = context.query_devices(Default::default());
+    ensure!(!devices.is_empty(), "No devices found");
+
+    let device = &devices[0];
+
+    // create pipeline
+    let pipeline = InactivePipeline::try_from(&context)?;
+    let mut config = Config::new();
+    config
+        .enable_device_from_serial(device.info(Rs2CameraInfo::SerialNumber).unwrap())?
+        .disable_all_streams()?
+        //.enable_stream(Rs2StreamKind::Color, None, 1280, 0, Rs2Format::Bgr8, 30)?
+        .enable_stream(Rs2StreamKind::Depth, None, 1280, 0, Rs2Format::Z16, 30)
+        .unwrap();
+
+    // Change pipeline's type from InactivePipeline -> ActivePipeline
+    let mut pipeline = pipeline.start(Some(config))?;
+
+    let streams = pipeline.profile().streams();
+
+    let depth_stream = streams
+        .iter()
+        .find(|p| p.kind() == Rs2StreamKind::Depth)
+        .unwrap();
+    let depth_intrinsics = depth_stream.intrinsics()?;
+
+    let timeout = Duration::from_millis(2000);
+
+    let mut pcld: Vec<[f32; 3]> = vec![];
+    let mut plane_points: Vec<Point2<f32>> = vec![];
+
+    let mut tracker = BlobTracker::new(CELL_WIDTH, 20 * 20, i64::MAX);
+
+    loop {
+        let frames = pipeline.wait(Some(timeout)).unwrap();
+        let depth_frame: &DepthFrame = &frames.frames_of_type()[0];
+        pointcloud_fast(depth_frame, &depth_intrinsics, &mut pcld);
+
+        plane_points.clear();
+        plane_points.extend(
+            pcld.drain(..)
+                .map(|p| plane.to_planespace(Point3::from(p)).xy()),
+        );
+
+        tracker.track(&plane_points);
+
+        delta.send(tracker.delta().clone()).unwrap();
+    }
+}
+
 fn fbm(mut rng: impl Rng, a: f32, iters: usize) -> f32 {
     let s = Uniform::new(-a, a);
     let mut out = 0.0;
@@ -253,11 +322,13 @@ fn fbm(mut rng: impl Rng, a: f32, iters: usize) -> f32 {
     out
 }
 
+type BlobTrackerDelta = AHashMap<Point2<i32>, Vector2<f32>>;
+
 struct BlobTracker {
     current: BlobBoxes,
     last: BlobBoxes,
     cell_width: f32,
-    delta: AHashMap<Point2<i32>, Vector2<f32>>,
+    delta: BlobTrackerDelta,
 }
 
 impl BlobTracker {
@@ -271,7 +342,7 @@ impl BlobTracker {
         }
     }
 
-    pub fn delta(&self) -> &AHashMap<Point2<i32>, Vector2<f32>> {
+    pub fn delta(&self) -> &BlobTrackerDelta {
         &self.delta
     }
 
@@ -456,7 +527,7 @@ fn blob_box_lines(lines: &mut Vec<Vertex>, blob_boxes: &BlobBoxes) {
     }
 }
 
-fn draw_delta(lines: &mut Vec<Vertex>, tracker: &BlobTracker) {
+fn draw_delta(lines: &mut Vec<Vertex>, delta: &BlobTrackerDelta, cell_width: f32) {
     let mut push_vertex = |pt: Point2<f32>, color: [f32; 3]| {
         lines.push(Vertex {
             pos: [pt.x, pt.y, 0.5],
@@ -464,8 +535,8 @@ fn draw_delta(lines: &mut Vec<Vertex>, tracker: &BlobTracker) {
         })
     };
 
-    for (pt, v) in tracker.delta() {
-        let pt = pt.cast::<f32>() * tracker.cell_width;
+    for (pt, v) in delta {
+        let pt = pt.cast::<f32>() * cell_width;
         push_vertex(pt, [0.; 3]);
         push_vertex(pt + *v, [1.; 3]);
     }
@@ -504,12 +575,12 @@ fn draw_velocity_lines(lines: &mut Vec<Vertex>, (u, v): (&Array2D<f32>, &Array2D
     }
 }
 
-fn delta_to_fluid((u, v): (&mut Array2D<f32>, &mut Array2D<f32>), tracker: &BlobTracker) {
+fn delta_to_fluid((u, v): (&mut Array2D<f32>, &mut Array2D<f32>), delta: &BlobTrackerDelta, cell_width: f32) {
     let w = u.width() as f32;
     let h = u.height() as f32;
 
-    for (pt, vt) in tracker.delta() {
-        let pt = (pt.cast::<f32>() * tracker.cell_width) / 2. + Vector2::from_element(0.5);
+    for (pt, vt) in delta {
+        let pt = (pt.cast::<f32>() * cell_width) / 2. + Vector2::from_element(0.5);
         let i = (pt.x * w).clamp(0., w - 1.) as usize;
         let j = (pt.y * h).clamp(0., h - 1.) as usize;
 

@@ -1,3 +1,5 @@
+fn main(){}
+/*
 use nalgebra::Point3;
 use std::io::{BufRead, Write};
 use std::path::Path;
@@ -74,3 +76,4 @@ fn write_csv<const N: usize>(path: &Path, data: &[[f32; N]]) -> Result<()> {
 
     Ok(())
 }
+*/
