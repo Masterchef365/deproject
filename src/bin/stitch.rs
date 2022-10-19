@@ -28,7 +28,7 @@ fn main() -> Result<()> {
     let root_path: PathBuf = args.next().expect("Requires root path").into();
 
     let model_path = root_path.join("matrix.csv");
-    let model = load_projector_model(&model_path)?;
+    let projector_model = load_projector_model(&model_path)?;
 
     let plane_path = root_path.join("plane.csv");
     let plane = Plane::read(File::open(plane_path)?)?;
@@ -96,7 +96,7 @@ fn main() -> Result<()> {
 
         let program = gl.create_program().expect("Cannot create program");
 
-        let vertex_shader_source = include_str!("shaders/default.vert");
+        let vertex_shader_source = include_str!("shaders/project.vert");
         let fragment_shader_source = include_str!("shaders/default.frag");
 
         let shader_sources = [
@@ -170,6 +170,15 @@ fn main() -> Result<()> {
         gl.bind_vertex_array(None);
         gl.bind_buffer(glow::ARRAY_BUFFER, None);
 
+        // Upload projector matrix
+        gl.uniform_matrix_4_f32_slice(
+            gl.get_uniform_location(program, "u_projector").as_ref(),
+            true,
+            bytemuck::cast_slice(&projector_model),
+        );
+
+
+
         // We handle events differently between targets
 
         use glutin::event::{Event, WindowEvent};
@@ -212,7 +221,7 @@ fn main() -> Result<()> {
                         .map(|p| plane.proj(Point3::from(p)))
                         .map(|p| {
                             Vertex::new(
-                                to_gl_space(deproject(&model, *p.coords.as_ref())),
+                                *p.coords.as_ref(),
                                 [1., 0., 0.],
                             )
                         })

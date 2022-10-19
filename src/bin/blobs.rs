@@ -152,7 +152,7 @@ fn main() -> Result<()> {
         // Upload projector matrix
         gl.uniform_matrix_4_f32_slice(
             gl.get_uniform_location(program, "u_projector").as_ref(),
-            true,
+            false,
             bytemuck::cast_slice(&projector_model),
         );
 
