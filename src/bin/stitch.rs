@@ -218,7 +218,11 @@ fn main() -> Result<()> {
                         .into_iter()
                         .filter(|p| p[2] != 0.)
                         .filter(|&p| dist_range.contains(&plane.distance(Point3::from(p))))
-                        .map(|p| plane.proj(Point3::from(p)))
+                        .map(|p| {
+                            let mut k = plane.to_planespace(Point3::from(p));
+                            k.y = 0.;
+                            plane.from_planespace(k)
+                        })
                         .map(|p| {
                             Vertex::new(
                                 *p.coords.as_ref(),

@@ -187,9 +187,10 @@ fn main() -> Result<()> {
                     line_verts.clear();
 
                     // Update fluid
-                    for delta in tracking_rx.try_iter() {
-                        draw_delta(&mut line_verts, &delta, CELL_WIDTH);
+                    for (delta, boxes) in tracking_rx.try_iter() {
+                        //draw_delta(&mut line_verts, &delta, CELL_WIDTH);
                         delta_to_fluid(fluid_sim.uv_mut(), &delta, CELL_WIDTH);
+                        blob_box_lines(&mut line_verts, &boxes);
                     }
 
                     // Step fluid
@@ -258,7 +259,7 @@ fn main() -> Result<()> {
     }
 }
 
-fn tracking_thread(delta: Sender<BlobTrackerDelta>, plane: Plane) -> Result<()> {
+fn tracking_thread(delta: Sender<(BlobTrackerDelta, BlobBoxes)>, plane: Plane) -> Result<()> {
     // Open camera
     // Check for depth or color-compatible devices.
     let context = Context::new()?;
@@ -293,22 +294,25 @@ fn tracking_thread(delta: Sender<BlobTrackerDelta>, plane: Plane) -> Result<()> 
     let mut pcld: Vec<[f32; 3]> = vec![];
     let mut plane_points: Vec<Point2<f32>> = vec![];
 
-    let mut tracker = BlobTracker::new(CELL_WIDTH, 1 * 1, 200 * 200);
+    let mut tracker = BlobTracker::new(CELL_WIDTH, 1 * 1, 30 * 30);
 
     loop {
         let frames = pipeline.wait(Some(timeout)).unwrap();
         let depth_frame: &DepthFrame = &frames.frames_of_type()[0];
         pointcloud_fast(depth_frame, &depth_intrinsics, &mut pcld);
 
+        let dist_range = 0.05..0.15;
+
         plane_points.clear();
         plane_points.extend(
             pcld.drain(..)
+                .filter(|&p| dist_range.contains(&plane.distance(Point3::from(p))))
                 .map(|p| plane.to_planespace(Point3::from(p)).xz()),
         );
 
         tracker.track(&plane_points);
 
-        delta.send(tracker.delta().clone()).unwrap();
+        delta.send((tracker.delta().clone(), tracker.current.clone())).unwrap();
     }
 }
 
@@ -376,6 +380,7 @@ impl BlobTracker {
     }
 }
 
+#[derive(Clone)]
 struct BlobBoxes {
     cell_width: f32,
     min_blob_area: i64,
