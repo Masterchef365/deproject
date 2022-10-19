@@ -187,10 +187,10 @@ fn main() -> Result<()> {
                     line_verts.clear();
 
                     // Update fluid
-                    for (delta, boxes) in tracking_rx.try_iter() {
+                    for delta in tracking_rx.try_iter() {
                         //draw_delta(&mut line_verts, &delta, CELL_WIDTH);
                         delta_to_fluid(fluid_sim.uv_mut(), &delta, CELL_WIDTH);
-                        blob_box_lines(&mut line_verts, &boxes);
+                        //blob_box_lines(&mut line_verts, &boxes);
                     }
 
                     // Step fluid
@@ -203,7 +203,7 @@ fn main() -> Result<()> {
                     // Draw lines
                     //blob_box_lines(&mut line_verts, &tracker.current);
                     //draw_velocity_lines(&mut line_verts, fluid_sim.uv(), 0.5);
-                    //parts.draw(&mut line_verts);
+                    parts.draw(&mut line_verts);
 
                     line_verts.truncate(MAX_VERTS);
 
@@ -259,7 +259,7 @@ fn main() -> Result<()> {
     }
 }
 
-fn tracking_thread(delta: Sender<(BlobTrackerDelta, BlobBoxes)>, plane: Plane) -> Result<()> {
+fn tracking_thread(delta: Sender<BlobTrackerDelta>, plane: Plane) -> Result<()> {
     // Open camera
     // Check for depth or color-compatible devices.
     let context = Context::new()?;
@@ -294,7 +294,7 @@ fn tracking_thread(delta: Sender<(BlobTrackerDelta, BlobBoxes)>, plane: Plane) -
     let mut pcld: Vec<[f32; 3]> = vec![];
     let mut plane_points: Vec<Point2<f32>> = vec![];
 
-    let mut tracker = BlobTracker::new(CELL_WIDTH, 1 * 1, 30 * 30);
+    let mut tracker = BlobTracker::new(CELL_WIDTH, 1 * 1, 50 * 50);
 
     loop {
         let frames = pipeline.wait(Some(timeout)).unwrap();
@@ -312,7 +312,7 @@ fn tracking_thread(delta: Sender<(BlobTrackerDelta, BlobBoxes)>, plane: Plane) -
 
         tracker.track(&plane_points);
 
-        delta.send((tracker.delta().clone(), tracker.current.clone())).unwrap();
+        delta.send(tracker.delta().clone()).unwrap();
     }
 }
 
