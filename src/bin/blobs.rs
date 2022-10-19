@@ -96,7 +96,7 @@ fn main() -> Result<()> {
         }
 
         gl.use_program(Some(program));
-        gl.clear_color(0., 0., 0., 1.0);
+        gl.clear_color(0.1, 0.1, 0.1, 1.0);
         gl.enable(glow::VERTEX_PROGRAM_POINT_SIZE);
 
         // Setup line array
@@ -152,7 +152,7 @@ fn main() -> Result<()> {
         // Upload projector matrix
         gl.uniform_matrix_4_f32_slice(
             gl.get_uniform_location(program, "u_projector").as_ref(),
-            false,
+            true,
             bytemuck::cast_slice(&projector_model),
         );
 
@@ -202,13 +202,13 @@ fn main() -> Result<()> {
                     // Draw lines
                     //blob_box_lines(&mut line_verts, &tracker.current);
                     //draw_velocity_lines(&mut line_verts, fluid_sim.uv(), 0.5);
-                    parts.draw(&mut line_verts);
+                    //parts.draw(&mut line_verts);
 
                     line_verts.truncate(MAX_VERTS);
 
                     // Transform line vertices from plane space into camera space
                     for v in &mut line_verts {
-                        v.pos = *plane.from_planespace(Point3::from(v.pos)).coords.as_ref();
+                        v.pos = *plane.from_planespace(Point3::from(v.pos).xzy()).coords.as_ref();
                     }
 
                     // Render lines
@@ -293,7 +293,7 @@ fn tracking_thread(delta: Sender<BlobTrackerDelta>, plane: Plane) -> Result<()> 
     let mut pcld: Vec<[f32; 3]> = vec![];
     let mut plane_points: Vec<Point2<f32>> = vec![];
 
-    let mut tracker = BlobTracker::new(CELL_WIDTH, 20 * 20, i64::MAX);
+    let mut tracker = BlobTracker::new(CELL_WIDTH, 1 * 1, 200 * 200);
 
     loop {
         let frames = pipeline.wait(Some(timeout)).unwrap();
@@ -303,7 +303,7 @@ fn tracking_thread(delta: Sender<BlobTrackerDelta>, plane: Plane) -> Result<()> 
         plane_points.clear();
         plane_points.extend(
             pcld.drain(..)
-                .map(|p| plane.to_planespace(Point3::from(p)).xy()),
+                .map(|p| plane.to_planespace(Point3::from(p)).xz()),
         );
 
         tracker.track(&plane_points);
@@ -492,7 +492,7 @@ impl Rect2 {
 fn blob_box_lines(lines: &mut Vec<Vertex>, blob_boxes: &BlobBoxes) {
     let mut push_vert = |pt: Point2<f32>, color: [f32; 3]| {
         lines.push(Vertex {
-            pos: [pt.x, pt.y, 0.5],
+            pos: [pt.x, pt.y, 0.0],
             color,
         })
     };
@@ -530,7 +530,7 @@ fn blob_box_lines(lines: &mut Vec<Vertex>, blob_boxes: &BlobBoxes) {
 fn draw_delta(lines: &mut Vec<Vertex>, delta: &BlobTrackerDelta, cell_width: f32) {
     let mut push_vertex = |pt: Point2<f32>, color: [f32; 3]| {
         lines.push(Vertex {
-            pos: [pt.x, pt.y, 0.5],
+            pos: [pt.x, pt.y, 0.0],
             color,
         })
     };
@@ -545,7 +545,7 @@ fn draw_delta(lines: &mut Vec<Vertex>, delta: &BlobTrackerDelta, cell_width: f32
 fn draw_velocity_lines(lines: &mut Vec<Vertex>, (u, v): (&Array2D<f32>, &Array2D<f32>), z: f32) {
     let mut push_vertex = |pt: Point2<f32>, color: [f32; 3]| {
         lines.push(Vertex {
-            pos: [pt.x, pt.y, 0.5],
+            pos: [pt.x, pt.y, 0.0],
             color,
         })
     };
@@ -636,7 +636,7 @@ impl Floaters {
     pub fn draw(&self, lines: &mut Vec<Vertex>) {
         let mut push_vertex = |pt: Point2<f32>, color: [f32; 3]| {
             lines.push(Vertex {
-                pos: [pt.x, pt.y, 0.5],
+                pos: [pt.x, pt.y, 0.0],
                 color,
             })
         };
