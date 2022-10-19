@@ -53,10 +53,10 @@ def grad(abc, u, xyz1):
     return np.average(grad, axis=0)
 
 
-lr = 1e-2
+lr = 1e-3
 gamma = 0.9
 
-iters = 10_000
+iters = 50_000
 n_samples = 100
 
 
