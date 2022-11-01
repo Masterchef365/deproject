@@ -11,7 +11,7 @@ use nalgebra::{Matrix4, Point2, Point3, Vector2};
 use rand::{distributions::Uniform, prelude::Distribution, Rng};
 use std::fs::File;
 use std::path::PathBuf;
-use std::sync::mpsc::{Sender, channel};
+use std::sync::mpsc::{channel, Sender};
 use std::time::Duration;
 
 use realsense_rust::{
@@ -209,7 +209,10 @@ fn main() -> Result<()> {
 
                     // Transform line vertices from plane space into camera space
                     for v in &mut line_verts {
-                        v.pos = *plane.from_planespace(Point3::from(v.pos).xzy()).coords.as_ref();
+                        v.pos = *plane
+                            .from_planespace(Point3::from(v.pos).xzy())
+                            .coords
+                            .as_ref();
                     }
 
                     // Render lines
@@ -366,10 +369,11 @@ impl BlobTracker {
                     let diff = current.center() - last.center();
                     let diff = diff.cast::<f32>() * self.cell_width;
 
-                    for rect in [last, current] {
-                        for x in rect.min.x..rect.max.x {
-                            for y in rect.min.y..rect.max.y {
-                                let pt = Point2::new(x, y);
+                    let rect = current;
+                    for x in rect.min.x..rect.max.x {
+                        for y in rect.min.y..rect.max.y {
+                            let pt = Point2::new(x, y);
+                            if self.current.boxes.contains_key(&pt) {
                                 self.delta.insert(pt, diff);
                             }
                         }
@@ -580,7 +584,11 @@ fn draw_velocity_lines(lines: &mut Vec<Vertex>, (u, v): (&Array2D<f32>, &Array2D
     }
 }
 
-fn delta_to_fluid((u, v): (&mut Array2D<f32>, &mut Array2D<f32>), delta: &BlobTrackerDelta, cell_width: f32) {
+fn delta_to_fluid(
+    (u, v): (&mut Array2D<f32>, &mut Array2D<f32>),
+    delta: &BlobTrackerDelta,
+    cell_width: f32,
+) {
     let w = u.width() as f32;
     let h = u.height() as f32;
 
