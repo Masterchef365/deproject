@@ -66,10 +66,11 @@ fn main() -> Result<()> {
     plane.write(File::create(path)?)?;
 
     // Calculate projector matrix
-    let thresh = 1. / intrinsics.width().max(intrinsics.height()) as f32;
-    let iters = 1000;
+    let thresh_u = 1. / intrinsics.width() as f32;
+    let thresh_v = 1. / intrinsics.height() as f32;
+    let iters = 2_000;
     let mut rng = rand::thread_rng();
-    let model = solve_projector_matrix(&mut rng, &pcld, &pcld_xy, iters, thresh);
+    let model = solve_projector_matrix(&mut rng, &pcld, &pcld_xy, iters, thresh_u, thresh_v);
 
     // Write matrix to file
     let mut matrix_csv = File::create(root_path.join("matrix.csv"))?;
@@ -91,18 +92,29 @@ fn main() -> Result<()> {
     let mut predict_csv = BufWriter::new(File::create(root_path.join("predict.csv"))?);
     for i in 0..pcld.len() {
         let [x, y, z] = pcld[i];
-        let u = u_pred[i];
-        let v = v_pred[i];
-        writeln!(predict_csv, "{},{},{},{},{},0.0", x, y, z, u, v)?;
+
+        let (u, v, w);
+        if u_pred[i] < 0.0 || u_pred[i] > 1.0 || v_pred[i] < 0.0 || v_pred[i] > 1.0 {
+            w = 1.;
+            u = 0.01;
+            v = 0.1;
+        } else {
+            w = 0.;
+            u = u_pred[i];
+            v = v_pred[i];
+        }
+
+        writeln!(predict_csv, "{},{},{},{},{},{}", x, y, z, u, v, w)?;
     }
 
     // Write diff points
-    let mut predict_csv = BufWriter::new(File::create(root_path.join("diff.csv"))?);
+    let mut diff_csv = BufWriter::new(File::create(root_path.join("diff.csv"))?);
     for i in 0..pcld.len() {
         let [x, y, z] = pcld[i];
         let u = (u_pred[i] - pcld_xy[i][0]).abs();
         let v = (v_pred[i] - pcld_xy[i][1]).abs();
-        writeln!(predict_csv, "{},{},{},{},{},0.0", x, y, z, u, v)?;
+
+        writeln!(diff_csv, "{},{},{},{},{},0.0", x, y, z, u, v)?;
     }
 
 
@@ -292,14 +304,15 @@ fn solve_projector_matrix(
     pcld: &[[f32; 3]],
     xy: &[[f32; 2]],
     iters: usize,
-    thresh: f32,
+    thresh_u: f32,
+    thresh_v: f32,
 ) -> Model {
     let (u, v): (Vec<f32>, Vec<f32>) = xy.iter().map(|[x, y]| (x, y)).unzip();
 
     eprintln!("Solve U:");
-    let u_row = solve_row(&mut rng, pcld, &u, iters, thresh);
+    let u_row = solve_row(&mut rng, pcld, &u, iters, thresh_u);
     eprintln!("Solve V:");
-    let v_row = solve_row(&mut rng, pcld, &v, iters, thresh);
+    let v_row = solve_row(&mut rng, pcld, &v, iters, thresh_v);
 
     [u_row, v_row]
 }
