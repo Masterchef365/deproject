@@ -1,13 +1,13 @@
 use ahash::{AHashMap, AHashSet, HashSet, HashSetExt};
 use anyhow::{ensure, Ok, Result};
 use deproject::array2d::Array2D;
-use deproject::fluid::{DensitySim, FluidSim};
+use deproject::fluid::FluidSim;
 use deproject::plane::Plane;
 use deproject::projector::load_projector_model;
 use deproject::{pointcloud_fast, Vertex};
 use glow::HasContext;
 use glutin::window::Fullscreen;
-use nalgebra::{Matrix4, Point2, Point3, Vector2};
+use nalgebra::{Point2, Point3, Vector2};
 use rand::{distributions::Uniform, prelude::Distribution, Rng};
 use std::fs::File;
 use std::path::PathBuf;
@@ -18,7 +18,6 @@ use realsense_rust::{
     config::Config,
     context::Context,
     frame::DepthFrame,
-    frame::PixelKind,
     kind::{Rs2CameraInfo, Rs2Format, Rs2StreamKind},
     pipeline::InactivePipeline,
 };
@@ -46,8 +45,8 @@ fn main() -> Result<()> {
         let (gl, shader_version, window, event_loop) = {
             let event_loop = glutin::event_loop::EventLoop::new();
             let window_builder = glutin::window::WindowBuilder::new()
-                .with_title("Calibrator")
-                //.with_fullscreen(Some(Fullscreen::Borderless(None)))
+                .with_title("Fluid flow")
+                .with_fullscreen(Some(Fullscreen::Borderless(None)))
                 .with_inner_size(glutin::dpi::LogicalSize::new(1024.0, 768.0));
             let window = glutin::ContextBuilder::new()
                 .with_vsync(true)
@@ -142,8 +141,6 @@ fn main() -> Result<()> {
         use glutin::event::{Event, WindowEvent};
         use glutin::event_loop::ControlFlow;
 
-        let mut cursor_pos = (0., 0.);
-
         let sim_size = 150;
         let mut fluid_sim = FluidSim::new(sim_size, sim_size);
 
@@ -187,10 +184,11 @@ fn main() -> Result<()> {
                     line_verts.clear();
 
                     // Update fluid
-                    for delta in tracking_rx.try_iter() {
+                    //for delta in tracking_rx.try_iter() {
+                    for (delta, boxes) in tracking_rx.try_iter() {
                         //draw_delta(&mut line_verts, &delta, CELL_WIDTH);
                         delta_to_fluid(fluid_sim.uv_mut(), &delta, CELL_WIDTH);
-                        //blob_box_lines(&mut line_verts, &boxes);
+                        blob_box_lines(&mut line_verts, &boxes);
                     }
 
                     // Step fluid
@@ -238,13 +236,6 @@ fn main() -> Result<()> {
                     window.swap_buffers().unwrap();
                 }
                 Event::WindowEvent { ref event, .. } => match event {
-                    WindowEvent::CursorMoved { position, .. } => {
-                        let ph = window.window().inner_size();
-                        cursor_pos = (
-                            2. * position.x as f32 / ph.width as f32 - 1.,
-                            -2. * position.y as f32 / ph.height as f32 + 1.,
-                        );
-                    }
                     WindowEvent::Resized(physical_size) => {
                         window.resize(*physical_size);
                         gl.viewport(0, 0, physical_size.width as _, physical_size.height as _);
@@ -262,7 +253,8 @@ fn main() -> Result<()> {
     }
 }
 
-fn tracking_thread(delta: Sender<BlobTrackerDelta>, plane: Plane) -> Result<()> {
+//fn tracking_thread(delta: Sender<BlobTrackerDelta>, plane: Plane) -> Result<()> {
+fn tracking_thread(tx: Sender<(BlobTrackerDelta, BlobBoxes)>, plane: Plane) -> Result<()> {
     // Open camera
     // Check for depth or color-compatible devices.
     let context = Context::new()?;
@@ -315,18 +307,10 @@ fn tracking_thread(delta: Sender<BlobTrackerDelta>, plane: Plane) -> Result<()> 
 
         tracker.track(&plane_points);
 
-        delta.send(tracker.delta().clone()).unwrap();
+        let delta = tracker.delta().clone();
+        let boxes = tracker.current.clone();
+        tx.send((delta, boxes)).unwrap();
     }
-}
-
-fn fbm(mut rng: impl Rng, a: f32, iters: usize) -> f32 {
-    let s = Uniform::new(-a, a);
-    let mut out = 0.0;
-    for _ in 0..iters {
-        out /= 2.;
-        out += s.sample(&mut rng);
-    }
-    out
 }
 
 type BlobTrackerDelta = AHashMap<Point2<i32>, Vector2<f32>>;
