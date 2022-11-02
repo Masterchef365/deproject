@@ -354,12 +354,14 @@ impl BlobTracker {
                     let diff = current.center() - last.center();
                     let diff = diff.cast::<f32>() * self.cell_width;
 
-                    let rect = current;
-                    for x in rect.min.x..rect.max.x {
-                        for y in rect.min.y..rect.max.y {
-                            let pt = Point2::new(x, y);
-                            if self.current.boxes.contains_key(&pt) {
-                                self.delta.insert(pt, diff);
+                    for (rect, boxes) in [(current, &self.current.boxes), (last, &self.last.boxes)]
+                    {
+                        for x in rect.min.x..rect.max.x {
+                            for y in rect.min.y..rect.max.y {
+                                let pt = Point2::new(x, y);
+                                if boxes.contains_key(&pt) {
+                                    self.delta.insert(pt, diff);
+                                }
                             }
                         }
                     }
@@ -646,10 +648,7 @@ impl Floaters {
                 let k = 1080.0;
                 let c = [d.x.abs() * k, d.y.abs() * k, d.x.signum().max(0.)];
                 push_vertex(*last, c);
-                push_vertex(
-                    *part + d * 5.,
-                    c,
-                );
+                push_vertex(*part + d * 5., c);
             }
         }
     }

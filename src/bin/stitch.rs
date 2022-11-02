@@ -177,8 +177,6 @@ fn main() -> Result<()> {
             bytemuck::cast_slice(&projector_model),
         );
 
-
-
         // We handle events differently between targets
 
         use glutin::event::{Event, WindowEvent};
@@ -223,12 +221,7 @@ fn main() -> Result<()> {
                             k.y = 0.;
                             plane.from_planespace(k)
                         })
-                        .map(|p| {
-                            Vertex::new(
-                                *p.coords.as_ref(),
-                                [1., 0., 0.],
-                            )
-                        })
+                        .map(|p| Vertex::new(*p.coords.as_ref(), [1., 0., 0.]))
                         .collect();
 
                     gl.clear(glow::COLOR_BUFFER_BIT);

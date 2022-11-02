@@ -1,4 +1,4 @@
-fn main(){}
+fn main() {}
 /*
 use nalgebra::Point3;
 use std::io::{BufRead, Write};

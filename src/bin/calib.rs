@@ -126,7 +126,6 @@ fn main() -> Result<()> {
         writeln!(diff_csv, "{},{},{},{},{},{}", x, y, z, u, v, w)?;
     }
 
-
     Ok(())
 }
 

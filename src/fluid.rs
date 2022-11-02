@@ -45,7 +45,6 @@ fn lin_solve(b: i32, x: &mut Array2D, x0: &Array2D, scratch: &mut Array2D, a: f3
     for _ in 0..20 {
         for i in 1..=nx {
             for j in 1..=ny {
-
                 let left = x[(i - 1, j)];
                 let right = x[(i + 1, j)];
                 let up = x[(i, j - 1)];
@@ -114,7 +113,13 @@ fn advect(b: i32, d: &mut Array2D, d0: &Array2D, u: &Array2D, v: &Array2D, dt: f
     set_bnd(b, d);
 }
 
-fn project(u: &mut Array2D, v: &mut Array2D, p: &mut Array2D, div: &mut Array2D, scratch: &mut Array2D) {
+fn project(
+    u: &mut Array2D,
+    v: &mut Array2D,
+    p: &mut Array2D,
+    div: &mut Array2D,
+    scratch: &mut Array2D,
+) {
     let (nx, ny) = inner_size(u);
 
     for i in 1..=nx {
@@ -141,7 +146,15 @@ fn project(u: &mut Array2D, v: &mut Array2D, p: &mut Array2D, div: &mut Array2D,
     set_bnd(2, v);
 }
 
-fn dens_step(x: &mut Array2D, x0: &mut Array2D, u: &Array2D, v: &Array2D, scratch: &mut Array2D, diff: f32, dt: f32) {
+fn dens_step(
+    x: &mut Array2D,
+    x0: &mut Array2D,
+    u: &Array2D,
+    v: &Array2D,
+    scratch: &mut Array2D,
+    diff: f32,
+    dt: f32,
+) {
     add_source(x, x0, dt);
     //std::mem::swap(x0, x);
 
@@ -265,4 +278,3 @@ impl FluidSim {
         self.u.height()
     }
 }
-

@@ -56,4 +56,3 @@ impl<T> std::ops::IndexMut<(usize, usize)> for Array2D<T> {
         &mut self.data[idx]
     }
 }
-
