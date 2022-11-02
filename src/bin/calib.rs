@@ -3,6 +3,7 @@ use deproject::plane::ransac_plane;
 use deproject::pointcloud;
 use deproject::{image::*, pattern::*, realsense::*};
 use nalgebra::Point3;
+use rand::prelude::*;
 use realsense_rust::base::Rs2Intrinsics;
 use std::{
     fs::File,
@@ -52,29 +53,79 @@ fn main() -> Result<()> {
         .map(|(xy, _)| [xy[0], xy[1]])
         .collect();
 
-
     let xyz: Vec<Point3<f32>> = pcld.iter().copied().map(Point3::from).collect();
 
     let plane = ransac_plane(&xyz, 1000, 0.5 / 100., 1.0);
 
-    let mut out_xyz = pcld.to_vec();
-    let mut out_uv = pcld_xy.to_vec();
-
-    /*
-    for &pt in &xyz {
-        let mut pt = plane.to_planespace(pt);
-        pt.y = 0.;
-        let in_plane = plane.from_planespace(pt);
-        out_xyz.push(*in_plane.coords.as_ref());
-        out_uv.push([pt.x.abs(), pt.z.abs()]);
-    }
-    */
-
+    // Write debugging pointcloud
     let path = root_path.join("calib_points.csv");
-    write_pcld(path, &out_xyz, &out_uv)?;
+    write_pcld(path, &pcld, &pcld_xy)?;
 
+    // Write plane location
     let path = root_path.join("plane.csv");
     plane.write(File::create(path)?)?;
+
+    // Calculate projector matrix
+    let thresh_u = 1. / intrinsics.width() as f32;
+    let thresh_v = 1. / intrinsics.height() as f32;
+    let iters = 2_000;
+    let mut rng = rand::thread_rng();
+    let model = solve_projector_matrix(&mut rng, &pcld, &pcld_xy, iters, thresh_u, thresh_v);
+
+    // Write matrix to file
+    let mut matrix_csv = File::create(root_path.join("matrix.csv"))?;
+    for row in model {
+        for elem in row {
+            write!(matrix_csv, "{},", elem)?;
+        }
+        writeln!(matrix_csv)?;
+    }
+
+    // Predict model outputs
+    let [u_model, v_model] = model;
+    let mut u_pred = vec![0f32; pcld.len()];
+    let mut v_pred = vec![0f32; pcld.len()];
+    predict_row(u_model, &pcld, &mut u_pred);
+    predict_row(v_model, &pcld, &mut v_pred);
+
+    // Write predicted points
+    let mut predict_csv = BufWriter::new(File::create(root_path.join("predict.csv"))?);
+    for i in 0..pcld.len() {
+        let [x, y, z] = pcld[i];
+
+        let (u, v, w);
+        if u_pred[i] < 0.0 || u_pred[i] > 1.0 || v_pred[i] < 0.0 || v_pred[i] > 1.0 {
+            w = 1.;
+            u = 0.01;
+            v = 0.1;
+        } else {
+            w = 0.;
+            u = u_pred[i];
+            v = v_pred[i];
+        }
+
+        writeln!(predict_csv, "{},{},{},{},{},{}", x, y, z, u, v, w)?;
+    }
+
+    // Write diff points
+    let mut diff_csv = BufWriter::new(File::create(root_path.join("diff.csv"))?);
+    for i in 0..pcld.len() {
+        let [x, y, z] = pcld[i];
+
+        let (u, v, w);
+        if u_pred[i] < 0.0 || u_pred[i] > 1.0 || v_pred[i] < 0.0 || v_pred[i] > 1.0 {
+            w = 1.;
+            u = 0.01;
+            v = 0.1;
+        } else {
+            w = 0.;
+            u = (u_pred[i] - pcld_xy[i][0]).abs();
+            v = (v_pred[i] - pcld_xy[i][1]).abs();
+        }
+
+        writeln!(diff_csv, "{},{},{},{},{},{}", x, y, z, u, v, w)?;
+    }
+
 
     Ok(())
 }
@@ -132,34 +183,6 @@ fn avg_depth(path: &Path, max_iters: usize) -> Result<Image<u16>> {
 
     Ok(avg)
 }
-
-/*
-fn best_model(
-    mut rng: impl Rng,
-    pcld: &[[f32; 3]],
-    xy: &[[f32; 2]],
-    iters: usize,
-) -> Model {
-    let mut best_mse = f32::INFINITY;
-    let mut best_model = Matrix2x4::zeros();
-
-    for _ in 0..iters {
-        let model = create_model(&mut rng, &pcld, xy).unwrap();
-        let mse = model_mse(model, &pcld, xy);
-
-        if mse < best_mse {
-            dbg!(mse);
-            best_mse = mse;
-            best_model = model;
-        }
-
-        //output_xyz.push(*origin.coords.as_ref());
-        //output_rg.push([mse * 10., 1.]);
-    }
-
-    best_model
-}
-*/
 
 fn write_pcld(path: impl AsRef<Path>, pcld: &[[f32; 3]], xy: &[[f32; 2]]) -> Result<()> {
     let f = std::fs::File::create(path)?;
@@ -279,4 +302,116 @@ fn intensity(rgb: &[u8]) -> f32 {
         .sum::<f32>()
         / 3.)
         .sqrt()
+}
+
+const N: usize = 8;
+type ModelRow = [f32; N];
+type Model = [ModelRow; 2];
+
+fn solve_projector_matrix(
+    mut rng: impl Rng,
+    pcld: &[[f32; 3]],
+    xy: &[[f32; 2]],
+    iters: usize,
+    thresh_u: f32,
+    thresh_v: f32,
+) -> Model {
+    let (u, v): (Vec<f32>, Vec<f32>) = xy.iter().map(|[x, y]| (x, y)).unzip();
+
+    eprintln!("Solve U:");
+    let u_row = solve_row(&mut rng, pcld, &u, iters, thresh_u);
+    eprintln!("Solve V:");
+    let v_row = solve_row(&mut rng, pcld, &v, iters, thresh_v);
+
+    [u_row, v_row]
+}
+
+fn solve_row(
+    mut rng: impl Rng,
+    pcld: &[[f32; 3]],
+    u: &[f32],
+    iters: usize,
+    thresh: f32,
+) -> ModelRow {
+    let mut best_score = usize::MIN;
+    let mut best_model = [0f32; N];
+
+    let mut pred_u = vec![0f32; pcld.len()];
+    for _ in 0..iters {
+        let model = make_ransac_model(&mut rng, pcld, u);
+        predict_row(model, pcld, &mut pred_u);
+
+        let score = calc_score(thresh, u, &pred_u);
+        if score > best_score {
+            dbg!(score);
+            best_score = score;
+            best_model = model;
+        }
+    }
+
+    best_model
+}
+
+fn make_ransac_model(mut rng: impl Rng, pcld: &[[f32; 3]], u: &[f32]) -> ModelRow {
+    // Sanity check
+    assert_eq!(pcld.len(), u.len());
+
+    // Populate matrix randomly
+    let mut matrix = [0f32; N * N];
+    for row in matrix.chunks_exact_mut(N) {
+        let idx = rng.gen_range(0..pcld.len());
+        let [x, y, z] = pcld[idx];
+        let q = u[idx];
+
+        let xyz1 = [x, y, z, 1.];
+        row[..4].copy_from_slice(&xyz1);
+
+        let qxyz1 = xyz1.map(|v| -q * v);
+        row[4..].copy_from_slice(&qxyz1);
+    }
+
+    // If we used zeros for the guess, the delta would always be zero!
+    // So we use one instead
+    let mut model = [1f32; N];
+
+    // Magic step size
+    let omega = 0.5;
+
+    // Magic step count
+    let steps = 150;
+
+    // Use the Modified Richardson Method
+    // to determine the matrix coeffs
+    for _ in 0..steps {
+        let mut next_model = [0f32; N];
+        for (i, matrix_row) in matrix.chunks_exact(N).enumerate() {
+            let v: f32 = matrix_row.iter().zip(&model).map(|(a, b)| a * b).sum();
+            next_model[i] = model[i] - omega * v;
+        }
+        model = next_model;
+    }
+
+    model
+}
+
+/// Evaluate model accuracy
+fn calc_score(thresh: f32, u: &[f32], pred_u: &[f32]) -> usize {
+    u.iter()
+        .zip(pred_u)
+        .filter_map(|(u, &p)| (p >= 0.0 && p <= 1.0).then(|| u - p))
+        .filter(|&v| v.abs() < thresh)
+        .count()
+}
+
+/// Predict using model
+fn predict_row(model: ModelRow, pcld: &[[f32; 3]], output: &mut [f32]) {
+    for (xyz, out) in pcld.iter().zip(output) {
+        let [x, y, z] = xyz;
+        let [a, b, c, d, e, f, g, h] = model;
+
+        let num = a * x + b * y + c * z + d;
+        let denom = e * x + f * y + g * z + h;
+
+        *out = num / denom;
+    }
 }

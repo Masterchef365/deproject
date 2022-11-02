@@ -22,7 +22,8 @@ use realsense_rust::{
     pipeline::InactivePipeline,
 };
 
-const MAX_VERTS: usize = 100_000;
+const NUM_PARTICLES: usize = 20_000;
+const MAX_VERTS: usize = NUM_PARTICLES * 2;
 
 const CELL_WIDTH: f32 = 0.01;
 
@@ -144,7 +145,7 @@ fn main() -> Result<()> {
         let sim_size = 150;
         let mut fluid_sim = FluidSim::new(sim_size, sim_size);
 
-        let mut parts = Floaters::new(10_000);
+        let mut parts = Floaters::new(NUM_PARTICLES);
 
         // Upload projector matrix
         gl.uniform_matrix_4_f32_slice(
