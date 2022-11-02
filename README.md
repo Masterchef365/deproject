@@ -3,4 +3,4 @@
 * For each pixel, the average difference between intensities inverted frames is measured.
 * Pixels whose intensity difference had a signal:noise ratio greater than a given threshold are retained
 * The binary patterns are then decoded into position information within the projection
-* RANSAC is then used to determine the projection matrix parameters. Models are selected from random points and converted to a plausible model using Richardson iteration
+* RANSAC is then used to determine the projection matrix parameters. Random points are converted to a plausible model via Richardson iteration searching for an element of the nullspace of a homogenous matrix.

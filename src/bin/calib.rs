@@ -111,10 +111,19 @@ fn main() -> Result<()> {
     let mut diff_csv = BufWriter::new(File::create(root_path.join("diff.csv"))?);
     for i in 0..pcld.len() {
         let [x, y, z] = pcld[i];
-        let u = (u_pred[i] - pcld_xy[i][0]).abs();
-        let v = (v_pred[i] - pcld_xy[i][1]).abs();
 
-        writeln!(diff_csv, "{},{},{},{},{},0.0", x, y, z, u, v)?;
+        let (u, v, w);
+        if u_pred[i] < 0.0 || u_pred[i] > 1.0 || v_pred[i] < 0.0 || v_pred[i] > 1.0 {
+            w = 1.;
+            u = 0.01;
+            v = 0.1;
+        } else {
+            w = 0.;
+            u = (u_pred[i] - pcld_xy[i][0]).abs();
+            v = (v_pred[i] - pcld_xy[i][1]).abs();
+        }
+
+        writeln!(diff_csv, "{},{},{},{},{},{}", x, y, z, u, v, w)?;
     }
 
 
