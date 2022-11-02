@@ -271,7 +271,7 @@ fn tracking_thread(tx: Sender<BlobTrackerDelta>, plane: Plane) -> Result<()> {
         .enable_device_from_serial(device.info(Rs2CameraInfo::SerialNumber).unwrap())?
         .disable_all_streams()?
         //.enable_stream(Rs2StreamKind::Color, None, 1280, 0, Rs2Format::Bgr8, 30)?
-        .enable_stream(Rs2StreamKind::Depth, None, 1280, 0, Rs2Format::Z16, 30)
+        .enable_stream(Rs2StreamKind::Depth, None, 640, 360, Rs2Format::Z16, 60)
         .unwrap();
 
     // Change pipeline's type from InactivePipeline -> ActivePipeline
