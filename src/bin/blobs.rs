@@ -23,7 +23,8 @@ use realsense_rust::{
     pipeline::InactivePipeline,
 };
 
-const MAX_VERTS: usize = 100_000;
+const NUM_PARTICLES: usize = 20_000;
+const MAX_VERTS: usize = NUM_PARTICLES * 2;
 
 const CELL_WIDTH: f32 = 0.01;
 
@@ -47,7 +48,7 @@ fn main() -> Result<()> {
             let event_loop = glutin::event_loop::EventLoop::new();
             let window_builder = glutin::window::WindowBuilder::new()
                 .with_title("Calibrator")
-                //.with_fullscreen(Some(Fullscreen::Borderless(None)))
+                .with_fullscreen(Some(Fullscreen::Borderless(None)))
                 .with_inner_size(glutin::dpi::LogicalSize::new(1024.0, 768.0));
             let window = glutin::ContextBuilder::new()
                 .with_vsync(true)
@@ -147,7 +148,7 @@ fn main() -> Result<()> {
         let sim_size = 150;
         let mut fluid_sim = FluidSim::new(sim_size, sim_size);
 
-        let mut parts = Floaters::new(10_000);
+        let mut parts = Floaters::new(NUM_PARTICLES);
 
         // Upload projector matrix
         gl.uniform_matrix_4_f32_slice(
