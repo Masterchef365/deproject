@@ -22,7 +22,7 @@ use realsense_rust::{
     pipeline::InactivePipeline,
 };
 
-const NUM_PARTICLES: usize = 20_000;
+const NUM_PARTICLES: usize = 30_000;
 const MAX_VERTS: usize = NUM_PARTICLES * 2;
 
 const CELL_WIDTH: f32 = 0.01;
@@ -185,11 +185,11 @@ fn main() -> Result<()> {
                     line_verts.clear();
 
                     // Update fluid
-                    //for delta in tracking_rx.try_iter() {
-                    for (delta, boxes) in tracking_rx.try_iter() {
+                    for delta in tracking_rx.try_iter() {
+                        //for (delta, boxes) in tracking_rx.try_iter() {
                         //draw_delta(&mut line_verts, &delta, CELL_WIDTH);
-                        delta_to_fluid(fluid_sim.uv_mut(), &delta, CELL_WIDTH);
-                        blob_box_lines(&mut line_verts, &boxes);
+                        delta_to_fluid(fluid_sim.uv_mut(), &delta, CELL_WIDTH, 1.0);
+                        //blob_box_lines(&mut line_verts, &boxes);
                     }
 
                     // Step fluid
@@ -255,7 +255,7 @@ fn main() -> Result<()> {
 }
 
 //fn tracking_thread(delta: Sender<BlobTrackerDelta>, plane: Plane) -> Result<()> {
-fn tracking_thread(tx: Sender<(BlobTrackerDelta, BlobBoxes)>, plane: Plane) -> Result<()> {
+fn tracking_thread(tx: Sender<BlobTrackerDelta>, plane: Plane) -> Result<()> {
     // Open camera
     // Check for depth or color-compatible devices.
     let context = Context::new()?;
@@ -310,7 +310,7 @@ fn tracking_thread(tx: Sender<(BlobTrackerDelta, BlobBoxes)>, plane: Plane) -> R
 
         let delta = tracker.delta().clone();
         let boxes = tracker.current.clone();
-        tx.send((delta, boxes)).unwrap();
+        tx.send(delta).unwrap();
     }
 }
 
@@ -573,6 +573,7 @@ fn delta_to_fluid(
     (u, v): (&mut Array2D<f32>, &mut Array2D<f32>),
     delta: &BlobTrackerDelta,
     cell_width: f32,
+    intensity: f32,
 ) {
     let w = u.width() as f32;
     let h = u.height() as f32;
@@ -582,8 +583,8 @@ fn delta_to_fluid(
         let i = (pt.x * w).clamp(0., w - 1.) as usize;
         let j = (pt.y * h).clamp(0., h - 1.) as usize;
 
-        u[(i, j)] += vt.x;
-        v[(i, j)] += vt.y;
+        u[(i, j)] += vt.x * intensity;
+        v[(i, j)] += vt.y * intensity;
     }
 }
 
@@ -642,8 +643,13 @@ impl Floaters {
         for ((part, last), mask) in self.parts.iter().zip(&self.last).zip(&self.mask) {
             if *mask {
                 let d = part - last;
-                push_vertex(*last, [1.; 3]);
-                push_vertex(*part + d * 5., [1.; 3]);
+                let k = 1080.0;
+                let c = [d.x.abs() * k, d.y.abs() * k, d.x.signum().max(0.)];
+                push_vertex(*last, c);
+                push_vertex(
+                    *part + d * 5.,
+                    c,
+                );
             }
         }
     }
