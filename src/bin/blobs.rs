@@ -646,7 +646,7 @@ impl Floaters {
             if *mask {
                 let d = part - last;
                 let k = 1080.0;
-                let c = [d.x.abs() * k, d.y.abs() * k, d.x.signum().max(0.)];
+                let c = [(part.x * 5.).fract(), (part.y * 5.).fract(), 0.];
                 push_vertex(*last, c);
                 push_vertex(*part + d * 5., c);
             }
