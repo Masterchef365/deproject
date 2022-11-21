@@ -22,7 +22,7 @@ use realsense_rust::{
     pipeline::InactivePipeline,
 };
 
-const SIM_SIZE: usize = 150;
+const SIM_SIZE: usize = 170;
 const MAX_VERTS: usize = SIM_SIZE * SIM_SIZE * 6;
 
 const CELL_WIDTH: f32 = 0.01;
@@ -566,7 +566,7 @@ fn gol_step(front: &mut Array2D<bool>, back: &mut Array2D<bool>) {
             let mut count = 0;
             for dj in -1..=1 {
                 for di in -1..=1 {
-                    if dj != 0 && di != 0 {
+                    if (di, dj) != (0, 0) {
                         let ki = (di + i as i32) as usize;
                         let kj = (dj + j as i32) as usize;
                         count += if front[(ki, kj)] { 1 } else { 0 };
