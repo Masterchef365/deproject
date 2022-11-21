@@ -143,8 +143,6 @@ fn main() -> Result<()> {
         use glutin::event::{Event, WindowEvent};
         use glutin::event_loop::ControlFlow;
 
-        let mut cursor_pos = (0., 0.);
-
         let sim_size = 150;
         let mut fluid_sim = FluidSim::new(sim_size, sim_size);
 
@@ -170,21 +168,6 @@ fn main() -> Result<()> {
                 }
                 Event::RedrawRequested(_) => {
                     // Create fake pointcloud
-                    /*
-                    points.clear();
-                    let (x, y) = cursor_pos;
-                    let mut rng = rand::thread_rng();
-                    let v = 0.1;
-                    let k = 10;
-                    for _ in 0..1000 {
-                        let dx = fbm(&mut rng, v, k);
-                        let dy = fbm(&mut rng, v, k);
-                        points.push(Point2::new(x + dx, y + dy));
-                    }
-
-                    // Track points
-                    tracker.track(&points);
-                    */
                     line_verts.clear();
 
                     // Update fluid
@@ -236,13 +219,6 @@ fn main() -> Result<()> {
                     window.swap_buffers().unwrap();
                 }
                 Event::WindowEvent { ref event, .. } => match event {
-                    WindowEvent::CursorMoved { position, .. } => {
-                        let ph = window.window().inner_size();
-                        cursor_pos = (
-                            2. * position.x as f32 / ph.width as f32 - 1.,
-                            -2. * position.y as f32 / ph.height as f32 + 1.,
-                        );
-                    }
                     WindowEvent::Resized(physical_size) => {
                         window.resize(*physical_size);
                         gl.viewport(0, 0, physical_size.width as _, physical_size.height as _);
@@ -276,7 +252,8 @@ fn tracking_thread(delta: Sender<BlobTrackerDelta>, plane: Plane) -> Result<()> 
         .enable_device_from_serial(device.info(Rs2CameraInfo::SerialNumber).unwrap())?
         .disable_all_streams()?
         //.enable_stream(Rs2StreamKind::Color, None, 1280, 0, Rs2Format::Bgr8, 30)?
-        .enable_stream(Rs2StreamKind::Depth, None, 1280, 0, Rs2Format::Z16, 30)
+        //.enable_stream(Rs2StreamKind::Depth, None, 1280, 0, Rs2Format::Z16, 30)
+        .enable_stream(Rs2StreamKind::Depth, None, 640, 360, Rs2Format::Z16, 60)
         .unwrap();
 
     // Change pipeline's type from InactivePipeline -> ActivePipeline
