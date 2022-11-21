@@ -245,6 +245,8 @@ fn main() -> Result<()> {
             (gl, window, event_loop)
         };
 
+        let mut prog = FloorProgram::new(&gl, projector_model, tracking_rx, plane)?;
+
         // We handle events differently between targets
 
         use glutin::event::{Event, WindowEvent};
@@ -261,6 +263,7 @@ fn main() -> Result<()> {
                     window.window().request_redraw();
                 }
                 Event::RedrawRequested(_) => {
+                    prog.frame(&gl);
                     window.swap_buffers().unwrap();
                 }
                 Event::WindowEvent { ref event, .. } => match event {
@@ -268,7 +271,10 @@ fn main() -> Result<()> {
                         window.resize(*physical_size);
                         gl.viewport(0, 0, physical_size.width as _, physical_size.height as _);
                     }
-                    WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
+                    WindowEvent::CloseRequested => {
+                        prog.destroy(&gl);
+                        *control_flow = ControlFlow::Exit;
+                    }
                     _ => (),
                 },
                 _ => (),
