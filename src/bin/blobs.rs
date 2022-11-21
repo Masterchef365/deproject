@@ -154,7 +154,9 @@ impl FloorProgram {
             //blob_box_lines(&mut line_verts, &boxes);
         }
 
-        *self.paint.data_mut().choose_mut(&mut rand::thread_rng()).unwrap() = false;
+        for _ in 0..50 {
+            *self.paint.data_mut().choose_mut(&mut rand::thread_rng()).unwrap() = false;
+        }
 
         // Draw lines
         //blob_box_lines(&mut line_verts, &tracker.current);
