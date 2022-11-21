@@ -8,6 +8,7 @@ use deproject::{pointcloud_fast, Vertex};
 use glow::{Context, HasContext, NativeBuffer, Program, VertexArray};
 use glutin::window::Fullscreen;
 use nalgebra::{Point2, Point3, Vector2};
+use rand::seq::SliceRandom;
 use rand::{distributions::Uniform, prelude::Distribution, Rng};
 use std::fs::File;
 use std::path::PathBuf;
@@ -21,8 +22,8 @@ use realsense_rust::{
     pipeline::InactivePipeline,
 };
 
-const NUM_PARTICLES: usize = 20_000;
-const MAX_VERTS: usize = NUM_PARTICLES * 2;
+const SIM_SIZE: usize = 150;
+const MAX_VERTS: usize = SIM_SIZE * SIM_SIZE * 6;
 
 const CELL_WIDTH: f32 = 0.01;
 
@@ -121,9 +122,7 @@ impl FloorProgram {
             gl.bind_vertex_array(None);
             gl.bind_buffer(glow::ARRAY_BUFFER, None);
 
-            let sim_size = 150;
-            let mut paint = Array2D::new(sim_size, sim_size);
-            paint.data_mut().iter_mut().enumerate().for_each(|(i, d)| *d = i & 1 == 1);
+            let paint = Array2D::new(SIM_SIZE, SIM_SIZE);
 
             // Upload projector matrix
             gl.uniform_matrix_4_f32_slice(
@@ -154,6 +153,8 @@ impl FloorProgram {
             delta_to_paint(&mut self.paint, &delta, CELL_WIDTH);
             //blob_box_lines(&mut line_verts, &boxes);
         }
+
+        *self.paint.data_mut().choose_mut(&mut rand::thread_rng()).unwrap() = false;
 
         // Draw lines
         //blob_box_lines(&mut line_verts, &tracker.current);
@@ -186,7 +187,7 @@ impl FloorProgram {
             gl.bind_buffer(glow::ARRAY_BUFFER, None);
 
             gl.bind_vertex_array(Some(self.line_array));
-            gl.draw_arrays(glow::POINTS, 0, self.line_verts.len() as _);
+            gl.draw_arrays(glow::TRIANGLES, 0, self.line_verts.len() as _);
             gl.bind_vertex_array(None);
         }
 
@@ -329,16 +330,6 @@ fn tracking_thread(delta: Sender<BlobTrackerDelta>, plane: Plane) -> Result<()> 
 
         delta.send(tracker.delta().clone()).unwrap();
     }
-}
-
-fn fbm(mut rng: impl Rng, a: f32, iters: usize) -> f32 {
-    let s = Uniform::new(-a, a);
-    let mut out = 0.0;
-    for _ in 0..iters {
-        out /= 2.;
-        out += s.sample(&mut rng);
-    }
-    out
 }
 
 type BlobTrackerDelta = AHashMap<Point2<i32>, Vector2<f32>>;
@@ -509,91 +500,6 @@ impl Rect2 {
     }
 }
 
-fn blob_box_lines(lines: &mut Vec<Vertex>, blob_boxes: &BlobBoxes) {
-    let mut push_vert = |pt: Point2<f32>, color: [f32; 3]| {
-        lines.push(Vertex {
-            pos: [pt.x, pt.y, 0.0],
-            color,
-        })
-    };
-
-    let mut draw_box = |min: Point2<i32>, max: Point2<i32>, color: [f32; 3]| {
-        let bw = blob_boxes.cell_width;
-        let tl: Point2<f32> = min.cast() * bw;
-        let br: Point2<f32> = max.cast() * bw + Vector2::from_element(bw);
-
-        let tr = Point2::new(br.x, tl.y);
-        let bl = Point2::new(tl.x, br.y);
-
-        push_vert(tl, color);
-        push_vert(bl, color);
-
-        push_vert(tl, color);
-        push_vert(tr, color);
-
-        push_vert(tr, color);
-        push_vert(br, color);
-
-        push_vert(bl, color);
-        push_vert(br, color);
-    };
-
-    for (&tl, _) in &blob_boxes.boxes {
-        draw_box(tl, tl, [1., 0., 0.]);
-    }
-
-    for rect in &blob_boxes.bounds {
-        draw_box(rect.min, rect.max, [1., 1., 0.]);
-    }
-}
-
-fn draw_delta(lines: &mut Vec<Vertex>, delta: &BlobTrackerDelta, cell_width: f32) {
-    let mut push_vertex = |pt: Point2<f32>, color: [f32; 3]| {
-        lines.push(Vertex {
-            pos: [pt.x, pt.y, 0.0],
-            color,
-        })
-    };
-
-    for (pt, v) in delta {
-        let pt = pt.cast::<f32>() * cell_width;
-        push_vertex(pt, [0.; 3]);
-        push_vertex(pt + *v, [1.; 3]);
-    }
-}
-
-fn draw_velocity_lines(lines: &mut Vec<Vertex>, (u, v): (&Array2D<f32>, &Array2D<f32>), z: f32) {
-    let mut push_vertex = |pt: Point2<f32>, color: [f32; 3]| {
-        lines.push(Vertex {
-            pos: [pt.x, pt.y, 0.0],
-            color,
-        })
-    };
-
-    let cell_width = 2. / u.width() as f32;
-    let cell_height = 2. / u.height() as f32;
-
-    for i in 0..u.width() {
-        let i_frac = (i as f32 / u.width() as f32) * 2. - 1.;
-        for j in 0..u.height() {
-            let j_frac = (j as f32 / u.height() as f32) * 2. - 1.;
-
-            let u = u[(i, j)];
-            let v = v[(i, j)];
-
-            let speed = (u.powf(2.) + v.powf(2.)).sqrt();
-
-            let color = [speed * 80.; 3];
-
-            let tail = Point2::new(i_frac + cell_width / 2., j_frac + cell_height / 2.);
-            push_vertex(tail, [0.; 3]);
-
-            let len = cell_height * 2. / speed;
-            let tip = tail + Vector2::new(u, v) * len;
-            push_vertex(tip, color);
-        }
-    }
-}
 
 fn delta_to_paint(
     paint: &mut Array2D<bool>,
@@ -603,7 +509,7 @@ fn delta_to_paint(
     let w = paint.width() as f32;
     let h = paint.height() as f32;
 
-    for (pt, vt) in delta {
+    for (pt, _vt) in delta {
         let pt = (pt.cast::<f32>() * cell_width) / 2. + Vector2::from_element(0.5);
         let i = (pt.x * w).clamp(0., w - 1.) as usize;
         let j = (pt.y * h).clamp(0., h - 1.) as usize;
@@ -612,76 +518,13 @@ fn delta_to_paint(
     }
 }
 
-struct Floaters {
-    parts: Vec<Point2<f32>>,
-    last: Vec<Point2<f32>>,
-    mask: Vec<bool>,
-}
-
-impl Floaters {
-    pub fn new(n: usize) -> Self {
-        let parts = vec![Point2::new(-10., -10.); n];
-        let last = parts.clone();
-        let mask = vec![false; n];
-
-        Self { parts, last, mask }
-    }
-
-    pub fn step(&mut self, (u, v): (&Array2D<f32>, &Array2D<f32>), dt: f32) {
-        std::mem::swap(&mut self.parts, &mut self.last);
-
-        let mut rng = rand::thread_rng();
-        let unif = Uniform::new(-1., 1.);
-
-        let kill_rate = 0.0001;
-
-        let w = u.width() as f32;
-        let h = u.height() as f32;
-        for ((part, last), mask) in self.parts.iter_mut().zip(&self.last).zip(&mut self.mask) {
-            let in_bounds = part.x >= -1. && part.x <= 1. && part.y >= -1. && part.y <= 1.;
-
-            let alive = in_bounds && rng.gen_bool(1. - kill_rate);
-
-            if alive {
-                let pt = part.cast::<f32>() / 2. + Vector2::from_element(0.5);
-                let i = (pt.x * w).clamp(0., w - 1.) as usize;
-                let j = (pt.y * h).clamp(0., h - 1.) as usize;
-                let uv = Vector2::new(u[(i, j)], v[(i, j)]);
-                *part = last + uv * dt;
-            } else {
-                *part = Point2::new(unif.sample(&mut rng), unif.sample(&mut rng));
-            }
-
-            *mask = alive;
-        }
-    }
-
-    pub fn draw(&self, lines: &mut Vec<Vertex>) {
-        let mut push_vertex = |pt: Point2<f32>, color: [f32; 3]| {
-            lines.push(Vertex {
-                pos: [pt.x, pt.y, 0.0],
-                color,
-            })
-        };
-
-        for ((part, last), mask) in self.parts.iter().zip(&self.last).zip(&self.mask) {
-            if *mask {
-                let d = part - last;
-                push_vertex(*last, [1.; 3]);
-                push_vertex(*part + d * 5., [1.; 3]);
-            }
-        }
-    }
-}
-
-
 fn draw_grid(arr: &Array2D<bool>, vertices: &mut Vec<Vertex>) {
     let w = arr.width() as f32;
     let h = arr.height() as f32;
     let pw = 2. / w;
     let ph = 2. / h;
 
-    let z = 0.5;
+    let z = 0.0;
 
     for j in 0..arr.height() {
         for i in 0..arr.width() {
