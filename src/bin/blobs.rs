@@ -32,9 +32,8 @@ struct FloorProgram {
     line_array: VertexArray,
     program: Program,
     tracking_rx: Receiver<BlobTrackerDelta>,
-    fluid_sim: FluidSim,
-    parts: Floaters,
     plane: Plane,
+    paint: Array2D<bool>,
 }
 
 impl FloorProgram {
@@ -123,9 +122,8 @@ impl FloorProgram {
             gl.bind_buffer(glow::ARRAY_BUFFER, None);
 
             let sim_size = 150;
-            let mut fluid_sim = FluidSim::new(sim_size, sim_size);
-
-            let mut parts = Floaters::new(NUM_PARTICLES);
+            let mut paint = Array2D::new(sim_size, sim_size);
+            paint.data_mut().iter_mut().enumerate().for_each(|(i, d)| *d = i & 1 == 1);
 
             // Upload projector matrix
             gl.uniform_matrix_4_f32_slice(
@@ -139,8 +137,7 @@ impl FloorProgram {
                 line_buf,
                 line_array,
                 tracking_rx,
-                fluid_sim,
-                parts,
+                paint,
                 plane,
                 program,
             })
@@ -154,21 +151,14 @@ impl FloorProgram {
         // Update fluid
         for delta in self.tracking_rx.try_iter() {
             //draw_delta(&mut line_verts, &delta, CELL_WIDTH);
-            delta_to_fluid(self.fluid_sim.uv_mut(), &delta, CELL_WIDTH);
+            delta_to_paint(&mut self.paint, &delta, CELL_WIDTH);
             //blob_box_lines(&mut line_verts, &boxes);
         }
-
-        // Step fluid
-        let dt = 0.1;
-        self.fluid_sim.step(dt, 0.0);
-
-        // Update particles
-        self.parts.step(self.fluid_sim.uv(), dt);
 
         // Draw lines
         //blob_box_lines(&mut line_verts, &tracker.current);
         //draw_velocity_lines(&mut line_verts, fluid_sim.uv(), 0.5);
-        self.parts.draw(&mut self.line_verts);
+        draw_grid(&self.paint, &mut self.line_verts);
 
         self.line_verts.truncate(MAX_VERTS);
 
@@ -196,7 +186,7 @@ impl FloorProgram {
             gl.bind_buffer(glow::ARRAY_BUFFER, None);
 
             gl.bind_vertex_array(Some(self.line_array));
-            gl.draw_arrays(glow::LINES, 0, self.line_verts.len() as _);
+            gl.draw_arrays(glow::POINTS, 0, self.line_verts.len() as _);
             gl.bind_vertex_array(None);
         }
 
@@ -605,21 +595,20 @@ fn draw_velocity_lines(lines: &mut Vec<Vertex>, (u, v): (&Array2D<f32>, &Array2D
     }
 }
 
-fn delta_to_fluid(
-    (u, v): (&mut Array2D<f32>, &mut Array2D<f32>),
+fn delta_to_paint(
+    paint: &mut Array2D<bool>,
     delta: &BlobTrackerDelta,
     cell_width: f32,
 ) {
-    let w = u.width() as f32;
-    let h = u.height() as f32;
+    let w = paint.width() as f32;
+    let h = paint.height() as f32;
 
     for (pt, vt) in delta {
         let pt = (pt.cast::<f32>() * cell_width) / 2. + Vector2::from_element(0.5);
         let i = (pt.x * w).clamp(0., w - 1.) as usize;
         let j = (pt.y * h).clamp(0., h - 1.) as usize;
 
-        u[(i, j)] += vt.x;
-        v[(i, j)] += vt.y;
+        paint[(i, j)] = true;
     }
 }
 
@@ -681,6 +670,44 @@ impl Floaters {
                 push_vertex(*last, [1.; 3]);
                 push_vertex(*part + d * 5., [1.; 3]);
             }
+        }
+    }
+}
+
+
+fn draw_grid(arr: &Array2D<bool>, vertices: &mut Vec<Vertex>) {
+    let w = arr.width() as f32;
+    let h = arr.height() as f32;
+    let pw = 2. / w;
+    let ph = 2. / h;
+
+    let z = 0.5;
+
+    for j in 0..arr.height() {
+        for i in 0..arr.width() {
+            let px = i as f32 / w * 2. - 1.;
+            let py = j as f32 / h * 2. - 1.;
+            let b = arr[(i, j)];
+
+            let color = match b {
+                true => [1.; 3],
+                false => [0.; 3],
+            };
+
+            let mut v = |x, y| {
+                vertices.push(Vertex {
+                    pos: [x, y, z],
+                    color,
+                })
+            };
+
+            v(px, py);
+            v(px + ph, py + pw);
+            v(px, py + pw);
+
+            v(px, py);
+            v(px + ph, py + pw);
+            v(px + ph, py);
         }
     }
 }
