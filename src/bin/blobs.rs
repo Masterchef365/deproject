@@ -34,7 +34,8 @@ struct FloorProgram {
     program: Program,
     tracking_rx: Receiver<BlobTrackerDelta>,
     plane: Plane,
-    paint: Array2D<bool>,
+    front: Array2D<bool>,
+    back: Array2D<bool>,
 }
 
 impl FloorProgram {
@@ -122,7 +123,8 @@ impl FloorProgram {
             gl.bind_vertex_array(None);
             gl.bind_buffer(glow::ARRAY_BUFFER, None);
 
-            let paint = Array2D::new(SIM_SIZE, SIM_SIZE);
+            let front = Array2D::new(SIM_SIZE, SIM_SIZE);
+            let back = front.clone();
 
             // Upload projector matrix
             gl.uniform_matrix_4_f32_slice(
@@ -136,7 +138,8 @@ impl FloorProgram {
                 line_buf,
                 line_array,
                 tracking_rx,
-                paint,
+                front,
+                back,
                 plane,
                 program,
             })
@@ -150,18 +153,16 @@ impl FloorProgram {
         // Update fluid
         for delta in self.tracking_rx.try_iter() {
             //draw_delta(&mut line_verts, &delta, CELL_WIDTH);
-            delta_to_paint(&mut self.paint, &delta, CELL_WIDTH);
+            delta_to_paint(&mut self.front, &delta, CELL_WIDTH);
             //blob_box_lines(&mut line_verts, &boxes);
         }
 
-        for _ in 0..50 {
-            *self.paint.data_mut().choose_mut(&mut rand::thread_rng()).unwrap() = false;
-        }
+        gol_step(&mut self.front, &mut self.back);
 
         // Draw lines
         //blob_box_lines(&mut line_verts, &tracker.current);
         //draw_velocity_lines(&mut line_verts, fluid_sim.uv(), 0.5);
-        draw_grid(&self.paint, &mut self.line_verts);
+        draw_grid(&self.front, &mut self.line_verts);
 
         self.line_verts.truncate(MAX_VERTS);
 
@@ -555,4 +556,35 @@ fn draw_grid(arr: &Array2D<bool>, vertices: &mut Vec<Vertex>) {
             v(px + ph, py);
         }
     }
+}
+
+fn gol_step(front: &mut Array2D<bool>, back: &mut Array2D<bool>) {
+    // Read from front, write to back
+
+    for j in 1..front.height()-1 {
+        for i in 1..front.width()-1 {
+            let mut count = 0;
+            for dj in -1..=1 {
+                for di in -1..=1 {
+                    if dj != 0 && di != 0 {
+                        let ki = (di + i as i32) as usize;
+                        let kj = (dj + j as i32) as usize;
+                        count += if front[(ki, kj)] { 1 } else { 0 };
+                    }
+                }
+            }
+
+            let middle = front[(i, j)];
+
+            let b = if middle {
+                matches!(count, 2 | 3)
+            } else {
+                count == 3
+            };
+
+            back[(i, j)] = b;
+        }
+    }
+
+    std::mem::swap(front, back);
 }
